@@ -1,0 +1,203 @@
+id: ai-assistant-platform
+name: AI Assistant Platform
+title: System Risk Assessment — AI Assistant Platform (pilot)
+doc_id: SRA-2026-05
+version: "1.0"
+assessment_date: 2026-06-19
+next_review: 2026-09-19
+assessor: Security Operations (SecOps), with the Applied AI team
+owner_team: Applied AI
+exposure: internal
+data_classification: Confidential
+purpose: |
+  This is the first assessment of the AI Assistant Platform, a pilot that gives staff an internal
+  chat assistant grounded in company documentation and automates a small number of back-office
+  workflows. The platform is new, moves quickly and combines several young open-source components
+  that have had frequent security releases, which is why its review interval is three months
+  rather than six.
+overview:
+  - |
+    The platform serves two assistants: a documentation assistant that answers staff questions from
+    Confluence content, and a workflow assistant that drafts customer-service replies and files
+    them in Jira. Flows are built in Langflow by the Applied AI team; models are served on
+    premises by vLLM (two GPU nodes) with Ollama used by the team for local experiments on a
+    shared workstation; n8n automates the hand-offs between the assistants, Jira and the e-mail
+    system; and an MCP server (MCP Atlassian) gives the assistants read and write access to
+    Confluence and Jira. About 260 pilot users in customer service and operations use the
+    assistants; the Applied AI team has 9 members.
+  - |
+    Data classification is Confidential: the assistants read internal documentation and
+    customer-service tickets, and the workflow assistant writes to Jira. No customer personal data
+    is stored on the platform itself, but it passes through prompts and the vector store. Availability
+    tier is Tier 3 (best effort during the pilot).
+  - |
+    Staff authenticate to the assistants through Keycloak OIDC. The Langflow, n8n and MCP Atlassian
+    administration interfaces are reachable from the Applied AI team's network and the VPN; the
+    MCP Atlassian server authenticates callers with its own user tokens and holds an operator
+    service account for Confluence and Jira as a fallback.
+architecture:
+  - |
+    All components run on the AI cluster, a four-node Kubernetes cluster with two GPU workers, on the
+    internal segment. Langflow hosts the flows and exposes them to the assistant front end through
+    its API; vLLM serves the open-weight chat and embedding models through an OpenAI-compatible API
+    protected by an API key; Qdrant holds the document embeddings; n8n runs the workflows; MCP
+    Atlassian runs as a streamable-HTTP MCP server in the same namespace and is called by the
+    Langflow flows. Ollama runs on the team's shared GPU workstation on the office network, not in
+    the cluster, and is used to try models before they are promoted to vLLM.
+  - |
+    Confluence content is synchronised nightly into Qdrant through an n8n workflow that reads pages
+    through MCP Atlassian; the documentation assistant retrieves from Qdrant at query time. The
+    workflow assistant's Jira writes go through MCP Atlassian with the operator service account
+    when the calling user's own token is not available.
+hosts:
+  - {hostname: k8s-ai-cp-01.corp.example, ip: 198.51.100.180, zone: Internal (AI), role: Kubernetes control plane (AI cluster), os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-ai-w-01.corp.example, ip: 198.51.100.181, zone: Internal (AI), role: Kubernetes worker (Langflow, n8n, MCP Atlassian, Qdrant), os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-ai-gpu-01.corp.example, ip: 198.51.100.182, zone: Internal (AI), role: GPU worker (vLLM), os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-ai-gpu-02.corp.example, ip: 198.51.100.183, zone: Internal (AI), role: GPU worker (vLLM), os: Ubuntu 24.04 LTS}
+  - {hostname: ai-lab-01.corp.example, ip: 198.51.100.190, zone: Office network (Applied AI), role: Shared GPU workstation (Ollama), os: Ubuntu 24.04 LTS}
+  - {hostname: bastion-01.mgmt.corp.example, ip: 192.0.2.5, zone: Management, role: SSH bastion (MFA), os: Ubuntu 24.04 LTS}
+components:
+  - product: Langflow
+    vendor: Langflow project (DataStax / IBM)
+    version: 1.9.1
+    role: Flow builder and API for the two assistants
+    deployed_on: AI cluster (namespace langflow)
+    cves: [CVE-2026-10561, CVE-2026-10134, CVE-2026-7873, CVE-2026-8481]
+    notes: |
+      Langflow 1.9.1 runs with authentication enabled (AUTO_LOGIN disabled) and Keycloak in front
+      of the UI; the API used by the assistant front end is reachable from the cluster and the
+      pilot users' networks with per-flow API keys. The Applied AI team's nine members are Langflow
+      users who can create and edit flows, which includes custom Python components. Secrets for vLLM,
+      Qdrant and MCP Atlassian are stored in Langflow's global variables. The instance is upgraded
+      when the team adopts a new release, roughly every six weeks.
+  - product: vLLM
+    vendor: vLLM project
+    version: 0.21.0
+    role: Model serving (chat and embedding models) with an OpenAI-compatible API
+    deployed_on: k8s-ai-gpu-01, k8s-ai-gpu-02
+    cves: [CVE-2026-48746, CVE-2026-55574, CVE-2026-93592]
+    notes: |
+      vLLM 0.21.0 serves two models behind its OpenAI-compatible server with --api-key set; the
+      endpoints /v1/chat/completions, /v1/embeddings and /pooling are reachable from the AI cluster
+      and from the Applied AI team's network. Structured-output requests with regular expressions
+      are used by the workflow assistant. The GPU nodes are dedicated to vLLM.
+  - product: Ollama
+    vendor: Ollama Inc.
+    version: 0.30.1
+    role: Local model experiments on the shared workstation
+    deployed_on: ai-lab-01
+    cves: [CVE-2026-102697, CVE-2026-103663]
+    notes: |
+      Ollama 0.30.1 runs as a system service on the shared GPU workstation on the office network,
+      listening on all interfaces so that team members can use it from their laptops; the
+      experimental agent mode with the Bash tool is enabled for two team members' experiments. Models
+      are pulled from the public registry through the egress proxy. The workstation is not part of
+      the cluster and is patched by the team rather than by the platform process.
+  - product: n8n
+    vendor: n8n GmbH
+    version: 2.20.3
+    role: Workflow automation between the assistants, Jira and e-mail
+    deployed_on: AI cluster (namespace n8n)
+    cves: [CVE-2026-44789, CVE-2026-44790, CVE-2026-54305]
+    notes: |
+      n8n 2.20.3 (Enterprise trial licence) with Keycloak SSO; 14 users across Applied AI and
+      customer-service operations can create or modify workflows. Workflows use the HTTP Request
+      node extensively and the Git node for the flow-export backup to GitLab. Credentials for Jira,
+      the e-mail relay and MCP Atlassian are stored in n8n's credential store; the Dynamic
+      Credentials feature is enabled for the customer-service workflows.
+  - product: MCP Atlassian
+    vendor: sooperset (open source)
+    version: 0.21.4
+    role: MCP server giving the assistants read and write access to Confluence and Jira
+    deployed_on: AI cluster (namespace langflow)
+    cves: [CVE-2026-77244, CVE-2026-77254]
+    notes: |
+      MCP Atlassian 0.21.4 runs in streamable-HTTP mode with per-user token authentication for
+      interactive use and the operator service account (a Confluence and Jira account with write
+      access to the customer-service projects) configured as the global credential for the n8n
+      synchronisation workflow. The endpoint is reachable from the langflow and n8n namespaces and,
+      for debugging, from the Applied AI team's network; there is no separate authentication
+      boundary in front of it.
+  - product: Qdrant
+    vendor: Qdrant Solutions GmbH
+    version: 1.14.1
+    role: Vector store for the documentation assistant
+    deployed_on: AI cluster (namespace langflow)
+    cves: []
+    notes: |
+      Qdrant 1.14.1 with an API key, reachable only inside the cluster. It holds embeddings of the
+      Confluence spaces the documentation assistant is allowed to answer from.
+  - product: Kubernetes
+    vendor: Kubernetes project (CNCF)
+    version: 1.33.2
+    role: AI cluster
+    deployed_on: k8s-ai-cp-01, k8s-ai-w-01, k8s-ai-gpu-01, k8s-ai-gpu-02
+    cves: []
+    notes: |
+      Deployed and operated by Platform Engineering with the same baseline as the platform cluster;
+      the GPU operator is installed on the two GPU workers. Network policies are applied per
+      namespace.
+exposure_notes:
+  - |
+    The platform is internal: nothing is reachable from the internet. The assistants are reachable
+    by the pilot users through the VPN and office networks; the administration interfaces and the
+    MCP endpoint by the Applied AI team's network and the VPN; the model-serving API by the cluster
+    and the team's network. The Ollama workstation listens on the office network.
+  - |
+    Two exposure factors specific to this platform: the assistants read content that other people
+    wrote (Confluence pages, Jira tickets, customer e-mails), which is a prompt-injection path into
+    the tools the assistants can call; and several components give authenticated users the ability
+    to run code (Langflow custom components, n8n workflows, vLLM and Ollama model loading).
+endpoints:
+  - {port: 443/tcp, service: Assistant front end, reachable_from: VPN and office networks (pilot users), auth: Keycloak OIDC (MFA)}
+  - {port: 443/tcp, service: Langflow UI and API, reachable_from: Applied AI network, VPN, cluster, auth: Keycloak OIDC for the UI; per-flow API keys}
+  - {port: 8000/tcp, service: vLLM OpenAI-compatible API, reachable_from: AI cluster and Applied AI network, auth: API key (--api-key)}
+  - {port: 11434/tcp, service: Ollama API, reachable_from: Office network (all interfaces), auth: None}
+  - {port: 5678/tcp, service: n8n UI and webhooks, reachable_from: Applied AI network, VPN, cluster, auth: Keycloak SSO; webhook tokens}
+  - {port: 8080/tcp, service: MCP Atlassian (streamable HTTP), reachable_from: langflow and n8n namespaces; Applied AI network, auth: Per-user tokens; operator service account fallback}
+  - {port: 6333/tcp, service: Qdrant, reachable_from: AI cluster only, auth: API key}
+controls:
+  - {control: Not reachable from the internet, status: In place, verified: 2026-06-10, notes: No ingress; egress through the proxy for model and package downloads.}
+  - {control: SSO with MFA for the UIs, status: In place, verified: 2026-06-10, notes: Langflow, n8n, the front end; MCP Atlassian uses its own tokens.}
+  - {control: Authentication boundary in front of the MCP endpoint, status: Not in place, verified: 2026-06-10, notes: Relies on MCP Atlassian's own token check (F-2026-052).}
+  - {control: Network policies per namespace, status: In place, verified: 2026-06-10, notes: Applied by Platform Engineering.}
+  - {control: Prompt-injection controls on retrieved content, status: Planned, verified: 2026-06-10, notes: Being designed by the Applied AI team (F-2026-053).}
+  - {control: Weekly authenticated vulnerability scan; images scanned in Harbor, status: Partial, verified: 2026-06-14, notes: The Ollama workstation is not in the scan scope (F-2026-051).}
+  - {control: Centralised logging to the SIEM, status: Partial, verified: 2026-06-10, notes: Langflow and n8n logs shipped; vLLM and MCP Atlassian logs not yet.}
+findings:
+  - {id: F-2026-051, severity: High, text: The Ollama workstation listens on all office-network interfaces without authentication and is outside the scan and patch process., owner: Applied AI, due: 2026-08-15}
+  - {id: F-2026-052, severity: High, text: The MCP Atlassian endpoint has no independent authentication boundary and holds an operator service account with write access to Jira., owner: Applied AI, due: 2026-08-31}
+  - {id: F-2026-053, severity: Medium, text: No prompt-injection controls on content the assistants retrieve before it reaches tool-calling flows., owner: Applied AI, due: 2026-09-30}
+  - {id: F-2026-054, severity: Medium, text: Secrets for vLLM, Qdrant and MCP Atlassian are stored in Langflow global variables readable by all nine team members., owner: Applied AI, due: 2026-09-30}
+contacts:
+  - {role: Owner Team lead, name: Elena Petrova, contact: elena.petrova@larkspur-logistics.example}
+  - {role: Technical lead (flows and models), name: Rafael Moreira, contact: rafael.moreira@larkspur-logistics.example}
+  - {role: Technical lead (automation and integrations), name: Hannah Weiss, contact: hannah.weiss@larkspur-logistics.example}
+  - {role: SecOps liaison, name: Priya Nandakumar, contact: secops@larkspur-logistics.example}
+ownership_notes:
+  - |
+    Applied AI owns the platform's applications and the Ollama workstation; Platform Engineering
+    operates the AI cluster. Because the platform is a pilot, SecOps reviews it quarterly and any
+    expansion beyond the pilot user group requires a new assessment.
+history:
+  - {date: 2026-06-19, version: "1.0", summary: Initial assessment of the pilot; four findings open, two rated High.}
+service_matrix:
+  - {host: AI cluster ingress, port: "443", service: NGINX ingress controller, listens: 198.51.100.179, purpose: Front end, Langflow, n8n virtual hosts}
+  - {host: k8s-ai-gpu-01/02, port: "8000", service: vLLM, listens: 198.51.100.182-183, purpose: Model serving}
+  - {host: k8s-ai-w-01, port: "8080", service: MCP Atlassian, listens: cluster service, purpose: Confluence and Jira tools}
+  - {host: k8s-ai-w-01, port: "6333", service: Qdrant, listens: cluster service, purpose: Vector store}
+  - {host: ai-lab-01, port: "11434", service: Ollama, listens: 198.51.100.190 (all interfaces), purpose: Local experiments}
+operations:
+  - |
+    Backups: Langflow flows and n8n workflows are exported nightly to a GitLab repository by an n8n
+    workflow; the Langflow and n8n databases are backed up nightly to the object store; Qdrant is
+    rebuilt from Confluence by the synchronisation workflow and is not backed up; model weights are
+    re-downloadable. No restore has been exercised yet (pilot).
+  - |
+    Change management: the Applied AI team deploys flow and workflow changes directly during the
+    pilot and records them on the team's change page; component upgrades go through the weekly CAB.
+    The pilot's exit criteria include moving flow changes to the GitLab deployment pipeline.
+changelog:
+  - {date: 2026-04-03, change: Pilot platform deployed; Langflow 1.9.1, vLLM 0.21.0, n8n 2.20.3, Qdrant 1.14.1., approved_by: CAB}
+  - {date: 2026-05-06, change: MCP Atlassian 0.21.4 deployed; operator service account created., approved_by: CAB}
+  - {date: 2026-06-02, change: Ollama 0.30.1 installed on the shared workstation; agent mode enabled for two users., approved_by: Owner Team}

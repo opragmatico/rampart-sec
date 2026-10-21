@@ -1,0 +1,201 @@
+id: collaboration-suite
+name: Collaboration Suite
+title: System Risk Assessment — Collaboration Suite (Confluence, Jira, Mattermost, Nextcloud)
+doc_id: SRA-2026-03
+version: "2.1"
+assessment_date: 2026-06-12
+next_review: 2026-12-12
+assessor: Security Operations (SecOps), with Workplace Technology
+owner_team: Workplace Technology
+exposure: internet-facing
+data_classification: Confidential
+purpose: |
+  This assessment covers the self-hosted collaboration tools used by all 2,400 employees and by
+  selected partners: Confluence and Jira Data Center for documentation and work tracking,
+  Mattermost for chat, and Nextcloud for file exchange with customers and partners. Two of the four
+  applications are reachable from the internet, which is why the suite is treated as an
+  internet-facing system for the purposes of the Vulnerability Management Policy even though most
+  users reach it through the corporate VPN.
+overview:
+  - |
+    Confluence Data Center hosts the company's internal documentation (about 41,000 pages across
+    380 spaces) and a public space, "Customer Documentation", that is served anonymously to
+    customers through the NetScaler ADC pair of the Customer Portal. Jira Software Data Center
+    tracks engineering, operations and customer-service work and is reachable only through the VPN.
+    Mattermost provides chat, channels and incident playbooks for staff. Nextcloud provides file
+    sharing with external parties through public links and guest accounts, with in-browser document
+    editing provided by the Collabora Online Built-in CODE Server app.
+  - |
+    Data classification is Confidential: the suite contains contracts, operational procedures,
+    incident records, HR material in restricted spaces, and customer documents exchanged through
+    Nextcloud. Personal data of employees is present in profiles and HR spaces. Availability tier is
+    Tier 2 (business hours, eight-hour recovery objective).
+  - |
+    Staff authenticate through the Keycloak staff realm with MFA (SAML for Mattermost, OIDC for the
+    others). Nextcloud guest accounts for partners use local passwords with mandatory MFA. The
+    Confluence public space is anonymous read-only.
+architecture:
+  - |
+    Confluence and Jira run as single-node Data Center deployments on dedicated hosts with a shared
+    PostgreSQL server. Confluence is published to the internet through the Customer Portal's
+    NetScaler ADC pair with a content-switching policy that forwards only the public space's paths
+    and the static resources they need; all other paths require the VPN. Nextcloud runs behind its
+    own NGINX reverse proxy in the DMZ and is reachable from the internet on TCP 443 for public
+    links and guest logins. Mattermost runs on the internal segment and is reachable from the VPN,
+    including the mobile apps.
+  - |
+    The applications share an Elasticsearch-free architecture: Confluence and Jira use their
+    bundled search, Mattermost uses its PostgreSQL full-text search. Attachments and Nextcloud files
+    are stored on the NAS volume mounted on each host.
+hosts:
+  - {hostname: confluence-01.corp.example, ip: 198.51.100.110, zone: Internal (published via DMZ ADC), role: Confluence Data Center node, os: RHEL 9.5}
+  - {hostname: jira-01.corp.example, ip: 198.51.100.111, zone: Internal, role: Jira Software Data Center node, os: RHEL 9.5}
+  - {hostname: collab-db-01.corp.example, ip: 198.51.100.115, zone: Internal, role: PostgreSQL for Confluence and Jira, os: RHEL 9.5}
+  - {hostname: chat-01.corp.example, ip: 198.51.100.120, zone: Internal, role: Mattermost server, os: Ubuntu 24.04 LTS}
+  - {hostname: chat-db-01.corp.example, ip: 198.51.100.121, zone: Internal, role: PostgreSQL for Mattermost, os: Ubuntu 24.04 LTS}
+  - {hostname: files-proxy-01.dmz.corp.example, ip: 203.0.113.40, zone: DMZ, role: NGINX reverse proxy for Nextcloud, os: Ubuntu 24.04 LTS}
+  - {hostname: files-01.corp.example, ip: 198.51.100.130, zone: Internal, role: Nextcloud application server, os: Ubuntu 24.04 LTS}
+  - {hostname: files-db-01.corp.example, ip: 198.51.100.131, zone: Internal, role: PostgreSQL for Nextcloud, os: Ubuntu 24.04 LTS}
+  - {hostname: bastion-01.mgmt.corp.example, ip: 192.0.2.5, zone: Management, role: SSH bastion (MFA), os: Ubuntu 24.04 LTS}
+components:
+  - product: Confluence Data Center
+    vendor: Atlassian
+    version: 9.2.21
+    role: Internal documentation and the public Customer Documentation space
+    deployed_on: confluence-01
+    cves: [CVE-2026-21589, CVE-2026-21580]
+    notes: |
+      Confluence Data Center 9.2.21 (long-term support line) with 380 spaces. The public space is
+      the only content reachable without authentication; it is exposed through the Customer Portal's
+      ADC with a content-switching policy, so the internet-facing surface is the Confluence web
+      application itself on the published paths. The instance runs the Atlassian-bundled Tomcat and
+      Java. Upgrades follow the LTS bug-fix releases about every two months, applied by Workplace
+      Technology.
+  - product: Jira Software Data Center
+    vendor: Atlassian
+    version: 10.3.18
+    role: Work tracking for engineering, operations and customer service
+    deployed_on: jira-01
+    cves: [CVE-2026-21589]
+    notes: |
+      Jira Software Data Center 10.3.18 (long-term support line), reachable only through the VPN. It
+      holds customer-service tickets that may contain customer personal data. It shares the
+      PostgreSQL server with Confluence and is upgraded on the same cadence.
+  - product: Mattermost
+    vendor: Mattermost Inc.
+    version: 11.8.3
+    role: Team chat, channels, incident playbooks
+    deployed_on: chat-01
+    cves: [CVE-2026-9816, CVE-2026-8821, CVE-2026-16453]
+    notes: |
+      Mattermost 11.8.3 (Professional) with SAML single sign-on through Keycloak, the Boards and
+      Playbooks features enabled, and invite-only teams for the security and HR functions. The server
+      is reachable from the VPN only, including the mobile applications through the VPN client. The
+      Mattermost Agents plugin is not installed.
+  - product: Nextcloud Server
+    vendor: Nextcloud GmbH
+    version: 31.0.6
+    role: File exchange with customers and partners
+    deployed_on: files-01, files-proxy-01
+    cves: []
+    notes: |
+      Nextcloud Server 31.0.6 (Hub 10) is reachable from the internet through the DMZ reverse proxy
+      for public links and guest logins. Internal users authenticate through Keycloak. Server-side
+      encryption is not enabled; files are on the NAS volume. Apps installed: Files, Sharing,
+      Collabora Online (richdocuments) with the built-in CODE server, Talk disabled.
+  - product: Collabora Online Built-in CODE Server (richdocumentscode)
+    vendor: Collabora Productivity
+    version: 26.4.202
+    role: In-browser document editing inside Nextcloud
+    deployed_on: files-01
+    cves: [CVE-2026-110447]
+    notes: |
+      The built-in CODE server app (richdocumentscode) 26.4.202 provides document editing without a
+      standalone Collabora deployment. It is started on demand by Nextcloud through the app's
+      proxy.php endpoint, which is reachable on the same internet-facing virtual host as Nextcloud.
+      The app is updated from the Nextcloud app store when Workplace Technology updates Nextcloud.
+  - product: PostgreSQL
+    vendor: PostgreSQL Global Development Group
+    version: 16.8
+    role: Databases for Confluence, Jira, Mattermost and Nextcloud
+    deployed_on: collab-db-01, chat-db-01, files-db-01
+    cves: []
+    notes: |
+      Three PostgreSQL 16.8 instances on separate hosts, each reachable only from its application
+      host, with TLS and SCRAM authentication.
+  - product: NGINX Open Source
+    vendor: F5 / nginx project
+    version: 1.26.3
+    role: Reverse proxy for Nextcloud in the DMZ
+    deployed_on: files-proxy-01
+    cves: []
+    notes: |
+      The Ubuntu-packaged NGINX 1.26.3 terminates TLS for Nextcloud and forwards to files-01. It
+      carries no WAF policy; rate limiting is configured for the login and public-link endpoints.
+exposure_notes:
+  - |
+    Internet-facing surface: the Confluence public space on the published paths through the ADC
+    (TCP 443), and Nextcloud with the built-in CODE server through the DMZ reverse proxy (TCP 443).
+    Jira and Mattermost are reachable only through the VPN. The ADC's WAF policy covers the
+    Confluence published paths; the Nextcloud proxy has no WAF.
+  - |
+    Because the Confluence public space is served by the same web application as the internal
+    spaces, an unauthenticated vulnerability in Confluence is reachable from the internet even
+    though the content-switching policy limits the published paths to the public space. Workplace
+    Technology reviews the published path list with each Confluence upgrade.
+endpoints:
+  - {port: 443/tcp, service: Confluence public space (via Customer Portal ADC), reachable_from: Internet, auth: Anonymous read-only (published paths only)}
+  - {port: 443/tcp, service: Confluence (all spaces), reachable_from: VPN, auth: Keycloak OIDC (MFA)}
+  - {port: 443/tcp, service: Jira Software, reachable_from: VPN, auth: Keycloak OIDC (MFA)}
+  - {port: 443/tcp, service: Mattermost web, API and mobile, reachable_from: VPN, auth: Keycloak SAML (MFA)}
+  - {port: 443/tcp, service: Nextcloud and built-in CODE server, reachable_from: Internet, auth: Public links; guest accounts (MFA); Keycloak OIDC for staff}
+  - {port: 5432/tcp, service: PostgreSQL (three instances), reachable_from: Respective application host only, auth: SCRAM + TLS}
+  - {port: 22/tcp, service: SSH, reachable_from: Management bastion only, auth: Key + MFA at the bastion}
+controls:
+  - {control: WAF policy on the Confluence published paths (NetScaler AppFW), status: In place, verified: 2026-06-02, notes: Shares the Customer Portal's ADC pair.}
+  - {control: Content switching restricts internet access to the public space's paths, status: In place, verified: 2026-06-02, notes: Path list reviewed at each Confluence upgrade.}
+  - {control: SSO with MFA for staff on all four applications, status: In place, verified: 2026-06-02, notes: Guest accounts on Nextcloud use local passwords with MFA.}
+  - {control: WAF or rate limiting in front of Nextcloud, status: Partial, verified: 2026-06-02, notes: Rate limiting only; no WAF (F-2026-032).}
+  - {control: Weekly authenticated vulnerability scan, status: In place, verified: 2026-06-08, notes: All hosts.}
+  - {control: Centralised logging to the SIEM, status: In place, verified: 2026-06-02, notes: Application audit logs and proxy access logs.}
+  - {control: Attachment and file malware scanning, status: In place, verified: 2026-05-30, notes: ClamAV on the NAS volume; Nextcloud antivirus app.}
+findings:
+  - {id: F-2026-031, severity: Medium, text: Confluence and Jira run as single nodes; a vulnerability requiring an emergency upgrade means downtime without a maintenance window., owner: Workplace Technology, due: 2026-12-31}
+  - {id: F-2026-032, severity: Medium, text: The internet-facing Nextcloud proxy has no web application firewall policy., owner: Workplace Technology, due: 2026-10-31}
+  - {id: F-2026-033, severity: Low, text: 14 Nextcloud guest accounts have not logged in for more than 180 days and remain active., owner: Workplace Technology, due: 2026-08-31}
+contacts:
+  - {role: Owner Team lead, name: Lukas Fjeldstad, contact: lukas.fjeldstad@larkspur-logistics.example}
+  - {role: Technical lead (Atlassian), name: Nadia El-Amrani, contact: nadia.elamrani@larkspur-logistics.example}
+  - {role: Technical lead (Mattermost and Nextcloud), name: Owen Pritchard, contact: owen.pritchard@larkspur-logistics.example}
+  - {role: SecOps liaison, name: Priya Nandakumar, contact: secops@larkspur-logistics.example}
+ownership_notes:
+  - |
+    Workplace Technology owns all four applications and their databases. The ADC publishing policy
+    for the Confluence public space is a joint change with Digital Channels Engineering, which
+    operates the ADC pair.
+history:
+  - {date: 2024-09-03, version: "1.0", summary: Initial assessment after migration from Atlassian Server to Data Center.}
+  - {date: 2025-06-18, version: "2.0", summary: Nextcloud and the built-in CODE server added; Mattermost replaces the previous chat tool.}
+  - {date: 2026-06-12, version: "2.1", summary: Annual review; three findings open.}
+service_matrix:
+  - {host: confluence-01, port: "8090", service: Confluence (Tomcat), listens: 198.51.100.110, purpose: Web application (published via ADC and VPN)}
+  - {host: jira-01, port: "8080", service: Jira (Tomcat), listens: 198.51.100.111, purpose: Web application (VPN)}
+  - {host: collab-db-01, port: "5432", service: PostgreSQL, listens: 198.51.100.115, purpose: Confluence and Jira databases}
+  - {host: chat-01, port: "8065", service: Mattermost, listens: 198.51.100.120, purpose: Web, API, mobile}
+  - {host: files-proxy-01, port: "443", service: NGINX, listens: 203.0.113.40, purpose: Nextcloud ingress}
+  - {host: files-01, port: "443", service: Nextcloud (Apache httpd, bundled), listens: 198.51.100.130, purpose: Application and CODE server proxy}
+operations:
+  - |
+    Backups: the three PostgreSQL instances take nightly dumps to the object store with 35-day
+    retention; the NAS volume holding attachments and files is snapshotted hourly and replicated to
+    the secondary data centre nightly. Confluence and Jira home directories are backed up with the
+    database. A restore of Confluence was exercised on 2026-03-19 (recovery time five hours).
+  - |
+    Change management: application upgrades are scheduled through the weekly CAB in the Saturday
+    maintenance window because the Atlassian nodes are single instances. Emergency upgrades follow
+    the emergency change procedure and are announced on the status channel. Nextcloud and its apps
+    are updated monthly from the app store after a test on the staging instance.
+changelog:
+  - {date: 2026-02-28, change: Confluence upgraded to 9.2.21 and Jira to 10.3.18., approved_by: CAB}
+  - {date: 2026-04-18, change: Mattermost upgraded to 11.8.3; Playbooks enabled for incident response., approved_by: CAB}
+  - {date: 2026-05-16, change: Nextcloud upgraded to 31.0.6; richdocumentscode updated to 26.4.202., approved_by: CAB}
