@@ -1,0 +1,117 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rampart"
+version = "0.1.0"
+description = "Rampart: guardrail-protected vulnerability triage agent served as a FastAPI service (MCP tools, Qdrant RAG, LangGraph with human approval, BM25 + LLM guardrails, audit)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+keywords = ["security", "vulnerability-management", "llm-agent", "guardrails", "fastapi", "mcp", "langgraph"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Framework :: FastAPI",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Security",
+]
+dependencies = [
+  "aiosqlite==0.22.1",
+  "fastapi==0.143.3",
+  "httpx==0.28.1",
+  "langchain==1.4.6",
+  "langchain-community==0.4.2",
+  "langchain-core==1.6.12",
+  "langchain-mcp-adapters==0.3.2",
+  "langchain-openai==1.7.2",
+  "langchain-qdrant==1.1.0",
+  "langchain-text-splitters==1.1.3",
+  "langgraph==1.2.15",
+  "langgraph-checkpoint-sqlite==3.1.2",
+  "mcp==1.30.0",
+  "pydantic==2.14.1",
+  "pydantic-settings==2.16.0",
+  "pypdf==6.21.0",
+  "python-dotenv==1.2.4",
+  "pyyaml==6.0.3",
+  "qdrant-client==1.19.1",
+  "rank-bm25==0.2.2",
+  "reportlab==5.0.1",
+  "structlog==26.1.0",
+  "tiktoken==0.14.0",
+  "uvicorn==0.54.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==2.4.0",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "pytest-cov==7.1.0",
+  "ruff==0.17.1",
+  "types-PyYAML==6.0.12.20260906",
+]
+
+[project.scripts]
+rampart = "rampart.cli:main"
+
+[project.urls]
+Repository = "https://github.com/opragmatico/rampart-sec-python"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rampart = ["agent/prompts/*.md"]
+
+# ── tests ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+  "live: needs real API keys and network (deselected by default)",
+]
+addopts = "-m 'not live' -ra"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["rampart"]
+branch = true
+
+[tool.coverage.report]
+skip_covered = false
+show_missing = true
+
+# ── lint / format ────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]   # the formatter owns line length; long prompt and docstring lines stay readable
+per-file-ignores = { "src/rampart/api/routers/guardrails.py" = ["F401"] }
+
+[tool.ruff.lint.isort]
+known-first-party = ["rampart"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency injection is declared in argument defaults by design
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Header"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ── types ────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.13"
+packages = ["rampart"]
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = false

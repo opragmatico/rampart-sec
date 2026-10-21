@@ -218,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ── Rampart ──────────────────────────────────────────────────────────────────
+# runtime state (recreated by `rampart index` / the service)
+var/
+qdrant_storage/
+*.sqlite3
+*.log
+# secrets
+.env
+# Claude Code worktrees
+.claude/worktrees/
