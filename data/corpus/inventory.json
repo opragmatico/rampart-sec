@@ -1,0 +1,208 @@
+{
+ "customer-portal": {
+  "name": "Customer Portal and Booking API",
+  "doc_id": "SRA-2026-01",
+  "exposure": "internet-facing",
+  "data_classification": "Restricted",
+  "owner_team": "Digital Channels Engineering",
+  "assessment_date": "2026-06-05",
+  "components": [
+   {
+    "product": "Citrix NetScaler ADC",
+    "version": "14.1-72.18"
+   },
+   {
+    "product": "NGINX Plus",
+    "version": "R35"
+   },
+   {
+    "product": "Apache Tomcat",
+    "version": "10.1.55"
+   },
+   {
+    "product": "Spring Framework",
+    "version": "6.2.15"
+   },
+   {
+    "product": "Keycloak",
+    "version": "26.2.5"
+   },
+   {
+    "product": "OpenSSL",
+    "version": "3.5.4"
+   },
+   {
+    "product": "PostgreSQL",
+    "version": "17.4"
+   },
+   {
+    "product": "Redis",
+    "version": "7.4.2"
+   }
+  ]
+ },
+ "cicd-platform": {
+  "name": "CI/CD and Artifact Platform",
+  "doc_id": "SRA-2026-02",
+  "exposure": "internal",
+  "data_classification": "Confidential",
+  "owner_team": "Platform Engineering",
+  "assessment_date": "2026-05-22",
+  "components": [
+   {
+    "product": "GitLab Enterprise Edition",
+    "version": "19.2.4"
+   },
+   {
+    "product": "JFrog Artifactory",
+    "version": "7.111.12"
+   },
+   {
+    "product": "Jenkins",
+    "version": "2.568.1"
+   },
+   {
+    "product": "Jenkins Script Security Plugin",
+    "version": "1402.v94c9ce464861"
+   },
+   {
+    "product": "Argo CD",
+    "version": "3.3.12"
+   },
+   {
+    "product": "Harbor",
+    "version": "2.15.1"
+   },
+   {
+    "product": "Kubernetes",
+    "version": "1.33.2"
+   },
+   {
+    "product": "Docker Engine",
+    "version": "28.1.1"
+   }
+  ]
+ },
+ "collaboration-suite": {
+  "name": "Collaboration Suite",
+  "doc_id": "SRA-2026-03",
+  "exposure": "internet-facing",
+  "data_classification": "Confidential",
+  "owner_team": "Workplace Technology",
+  "assessment_date": "2026-06-12",
+  "components": [
+   {
+    "product": "Confluence Data Center",
+    "version": "9.2.21"
+   },
+   {
+    "product": "Jira Software Data Center",
+    "version": "10.3.18"
+   },
+   {
+    "product": "Mattermost",
+    "version": "11.8.3"
+   },
+   {
+    "product": "Nextcloud Server",
+    "version": "31.0.6"
+   },
+   {
+    "product": "Collabora Online Built-in CODE Server (richdocumentscode)",
+    "version": "26.4.202"
+   },
+   {
+    "product": "PostgreSQL",
+    "version": "16.8"
+   },
+   {
+    "product": "NGINX Open Source",
+    "version": "1.26.3"
+   }
+  ]
+ },
+ "data-platform": {
+  "name": "Data and Analytics Platform",
+  "doc_id": "SRA-2026-04",
+  "exposure": "internal",
+  "data_classification": "Restricted",
+  "owner_team": "Data Engineering",
+  "assessment_date": "2026-05-29",
+  "components": [
+   {
+    "product": "Metabase",
+    "version": "1.58.12"
+   },
+   {
+    "product": "Apache Airflow",
+    "version": "3.1.2"
+   },
+   {
+    "product": "Apache Airflow FAB provider (apache-airflow-providers-fab)",
+    "version": "3.7.5"
+   },
+   {
+    "product": "Apache Airflow Apache Kafka provider (apache-airflow-providers-apache-kafka)",
+    "version": "1.16.0"
+   },
+   {
+    "product": "Elasticsearch",
+    "version": "9.4.2"
+   },
+   {
+    "product": "Kibana",
+    "version": "9.4.2"
+   },
+   {
+    "product": "Grafana",
+    "version": "12.1.0"
+   },
+   {
+    "product": "PostgreSQL",
+    "version": "17.4"
+   },
+   {
+    "product": "Apache Kafka",
+    "version": "3.9.1"
+   }
+  ]
+ },
+ "ai-assistant-platform": {
+  "name": "AI Assistant Platform",
+  "doc_id": "SRA-2026-05",
+  "exposure": "internal",
+  "data_classification": "Confidential",
+  "owner_team": "Applied AI",
+  "assessment_date": "2026-06-19",
+  "components": [
+   {
+    "product": "Langflow",
+    "version": "1.9.1"
+   },
+   {
+    "product": "vLLM",
+    "version": "0.21.0"
+   },
+   {
+    "product": "Ollama",
+    "version": "0.30.1"
+   },
+   {
+    "product": "n8n",
+    "version": "2.20.3"
+   },
+   {
+    "product": "MCP Atlassian",
+    "version": "0.21.4"
+   },
+   {
+    "product": "Qdrant",
+    "version": "1.14.1"
+   },
+   {
+    "product": "Kubernetes",
+    "version": "1.33.2"
+   }
+  ]
+ }
+}

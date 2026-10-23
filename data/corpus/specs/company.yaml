@@ -1,0 +1,15 @@
+# The fictitious company. Everything about it is invented; the software it runs is real.
+name: Larkspur Logistics, Inc.
+short: Larkspur
+industry: freight forwarding and warehouse logistics
+employees: 2400
+hq: Rotterdam, the Netherlands
+internal_domain: corp.example          # RFC 2606 reserved: never resolves on the Internet
+public_domain: larkspur-logistics.example
+ip_ranges:
+  dmz: 203.0.113.0/24                   # RFC 5737 documentation ranges, never routed
+  internal: 198.51.100.0/24
+  management: 192.0.2.0/24
+security_team: Security Operations (SecOps)
+ciso: Ingrid Halvorsen
+classification_banner: "INTERNAL — CONFIDENTIAL (fictitious). Property of Larkspur Logistics, Inc. Do not distribute outside the company."

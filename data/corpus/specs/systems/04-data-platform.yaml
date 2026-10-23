@@ -1,0 +1,219 @@
+id: data-platform
+name: Data and Analytics Platform
+title: System Risk Assessment — Data and Analytics Platform
+doc_id: SRA-2026-04
+version: "1.2"
+assessment_date: 2026-05-29
+next_review: 2026-11-29
+assessor: Security Operations (SecOps), with Data Engineering
+owner_team: Data Engineering
+exposure: internal
+data_classification: Restricted
+purpose: |
+  This assessment documents the platform that ingests operational data from the booking,
+  warehouse and fleet systems, transforms it, and serves dashboards and reports to the business.
+  The platform holds the most complete copy of customer and shipment data in the company, which is
+  why it is rated Restricted although it is reachable only from internal networks.
+overview:
+  - |
+    Apache Airflow orchestrates about 240 daily pipelines that pull data from the operational
+    databases and partner feeds into the analytics warehouse (PostgreSQL) and the search and log
+    cluster (Elasticsearch). Apache Kafka carries the event streams from the warehouse-management
+    and fleet-telemetry systems. Metabase provides dashboards and ad-hoc queries to about 350
+    business users; Kibana serves the data engineers and the logistics-control room; Grafana shows
+    platform health. Around 180 Data Engineering users and analysts have Airflow or Kibana access.
+  - |
+    Data classification is Restricted: the warehouse contains customer personal data (contacts,
+    addresses), shipment contents and values, pricing, and in the HR mart, employee data. Metabase
+    users see only the marts their group is entitled to through its sandboxing feature. Availability
+    tier is Tier 2 (business hours, eight-hour recovery objective); pipelines can be replayed.
+  - |
+    Staff authenticate through the Keycloak staff realm with MFA: Metabase and Kibana through OIDC,
+    Airflow through its Flask-AppBuilder (FAB) auth manager configured with Keycloak as the OAuth
+    provider. Analysts with native-query permission in Metabase can write SQL against the
+    warehouse marts.
+architecture:
+  - |
+    The platform runs on a dedicated Kubernetes cluster (the "data cluster") on the internal segment
+    for Airflow, Metabase, Kibana and Grafana, and on virtual machines for PostgreSQL, Elasticsearch
+    and Kafka. Airflow uses the KubernetesExecutor; pipeline code is deployed from the CI/CD
+    platform by a GitLab pipeline. Metabase connects to the warehouse with read-only accounts per
+    user group; the Metabase application database is PostgreSQL. The default sample database shipped
+    with Metabase (H2) is still present (finding F-2026-042).
+  - |
+    Elasticsearch stores the operational log and the shipment-event index used by the control room;
+    the machine-learning features are licensed and used by two anomaly-detection jobs maintained by
+    Data Engineering, who can upload trained models. Kafka runs as a three-broker cluster with
+    SASL/SCRAM authentication and TLS.
+hosts:
+  - {hostname: k8s-data-cp-01..03.corp.example, ip: 198.51.100.140-142, zone: Internal (data), role: Kubernetes control plane (data cluster), os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-data-w-01..08.corp.example, ip: 198.51.100.143-150, zone: Internal (data), role: Kubernetes workers (Airflow, Metabase, Kibana, Grafana), os: Ubuntu 24.04 LTS}
+  - {hostname: dwh-db-01.corp.example, ip: 198.51.100.160, zone: Internal (data), role: PostgreSQL warehouse primary, os: RHEL 9.5}
+  - {hostname: dwh-db-02.corp.example, ip: 198.51.100.161, zone: Internal (data), role: PostgreSQL warehouse replica, os: RHEL 9.5}
+  - {hostname: es-data-01..03.corp.example, ip: 198.51.100.165-167, zone: Internal (data), role: Elasticsearch nodes, os: RHEL 9.5}
+  - {hostname: kafka-01..03.corp.example, ip: 198.51.100.170-172, zone: Internal (data), role: Kafka brokers, os: RHEL 9.5}
+  - {hostname: bastion-01.mgmt.corp.example, ip: 192.0.2.5, zone: Management, role: SSH bastion (MFA), os: Ubuntu 24.04 LTS}
+components:
+  - product: Metabase
+    vendor: Metabase Inc.
+    version: 1.58.12
+    role: Dashboards and ad-hoc queries for business users
+    deployed_on: data cluster (namespace metabase)
+    cves: [CVE-2026-72898, CVE-2026-50148, CVE-2026-59827, CVE-2026-103928]
+    notes: |
+      Metabase 1.58.12 (Pro) with Keycloak OIDC login, sandboxed marts per group, and native-query
+      permission granted to 42 analysts. Database connections are managed by three Data Engineering
+      administrators; the warehouse connection is read-only. The H2 sample database that ships with
+      Metabase has not been removed (F-2026-042). The /reset_password endpoint is exposed to all
+      internal users on the application's virtual host. Upgrades are applied monthly from the vendor's
+      container image.
+  - product: Apache Airflow
+    vendor: Apache Software Foundation
+    version: 3.1.2
+    role: Pipeline orchestration
+    deployed_on: data cluster (namespace airflow)
+    cves: [CVE-2026-86473]
+    notes: |
+      Apache Airflow 3.1.2 with the KubernetesExecutor. Authentication uses the FAB auth manager with
+      Keycloak as the OAuth provider; database-backed sessions are enabled. API clients (the GitLab
+      deployment pipeline and two monitoring scripts) authenticate with bearer tokens. The Kafka event
+      producer (dag_run_events_enabled, task_instance_events_enabled) is disabled, which is the
+      default. Connections may be edited by 11 Data Engineering users with the Op role.
+  - product: Apache Airflow FAB provider (apache-airflow-providers-fab)
+    vendor: Apache Software Foundation
+    version: 3.7.5
+    role: Authentication and authorisation manager for Airflow
+    deployed_on: data cluster (namespace airflow)
+    cves: [CVE-2026-82311, CVE-2026-75156, CVE-2026-86462]
+    notes: |
+      The FAB provider 3.7.5 supplies the auth manager. It is configured with Keycloak as the OAuth
+      provider, not Azure AD, and with session_backend set to database. Password resets are rare
+      because Keycloak is the identity source, but local FAB accounts exist for the two break-glass
+      administrators.
+  - product: Apache Airflow Apache Kafka provider (apache-airflow-providers-apache-kafka)
+    vendor: Apache Software Foundation
+    version: 1.16.0
+    role: Kafka operators and hooks used by the ingestion pipelines
+    deployed_on: data cluster (namespace airflow)
+    cves: [CVE-2026-86792]
+    notes: |
+      The Kafka provider 1.16.0 is used by the ingestion DAGs through Kafka connections whose extra
+      field holds the SASL settings. The scheduler-side event producer is not enabled (see Airflow
+      notes), so provider code runs in task pods rather than in the scheduler.
+  - product: Elasticsearch
+    vendor: Elastic
+    version: 9.4.2
+    role: Operational log and shipment-event index; anomaly-detection models
+    deployed_on: es-data-01..03
+    cves: [CVE-2026-72642, CVE-2026-72649]
+    notes: |
+      Elasticsearch 9.4.2 (Platinum licence) as a three-node cluster with TLS and role-based access.
+      The machine-learning node role is enabled on all three nodes; the manage_ml privilege, which
+      allows uploading and deploying trained models, is held by the six members of the Data
+      Engineering anomaly-detection group.
+  - product: Kibana
+    vendor: Elastic
+    version: 9.4.2
+    role: Dashboards for data engineers and the control room; Fleet management
+    deployed_on: data cluster (namespace elastic)
+    cves: [CVE-2026-102406]
+    notes: |
+      Kibana 9.4.2 with Keycloak OIDC and Spaces per team. Fleet is used to manage the log-shipping
+      agents on the platform hosts; delegated Fleet package-management privileges are held by the
+      platform SRE group in addition to the Elastic administrators.
+  - product: Grafana
+    vendor: Grafana Labs
+    version: 12.1.0
+    role: Platform health dashboards
+    deployed_on: data cluster (namespace monitoring)
+    cves: [CVE-2026-15815]
+    notes: |
+      Grafana OSS 12.1.0 with Keycloak OIDC. Plugins are installed by the two Grafana administrators
+      from the public catalogue through the administration UI; eleven plugins are installed, all
+      signed. Dashboards read from Prometheus and from the warehouse replica.
+  - product: PostgreSQL
+    vendor: PostgreSQL Global Development Group
+    version: 17.4
+    role: Analytics warehouse and the Metabase and Airflow application databases
+    deployed_on: dwh-db-01, dwh-db-02
+    cves: []
+    notes: |
+      PostgreSQL 17.4 primary and streaming replica; the replica serves Metabase and Grafana reads.
+      Row-level security backs the Metabase sandboxing for the HR mart.
+  - product: Apache Kafka
+    vendor: Apache Software Foundation
+    version: 3.9.1
+    role: Event streams from warehouse management and fleet telemetry
+    deployed_on: kafka-01..03
+    cves: []
+    notes: |
+      Three brokers in KRaft mode with SASL/SCRAM and TLS; ACLs per producing and consuming
+      service account.
+exposure_notes:
+  - |
+    The platform is internal: nothing is reachable from the internet. Metabase is reachable from
+    the office networks and the VPN by all staff with an account; Airflow, Kibana and Grafana from
+    the Data Engineering and SRE groups' networks; the databases, Elasticsearch and Kafka only from
+    the data cluster and the bastion.
+  - |
+    The main exposure is the number of authenticated users with query or model privileges: 42
+    analysts can run native SQL in Metabase, 11 engineers can edit Airflow connections, and 6 can
+    deploy machine-learning models in Elasticsearch. Those privileges are the preconditions of
+    several of the vulnerabilities this platform's components have had.
+endpoints:
+  - {port: 443/tcp, service: Metabase, reachable_from: Office networks and VPN (all staff), auth: Keycloak OIDC (MFA); password reset endpoint exposed}
+  - {port: 443/tcp, service: Airflow web UI and REST API, reachable_from: Data Engineering and SRE networks; CI/CD pipeline, auth: FAB auth manager with Keycloak OAuth; bearer tokens for API clients}
+  - {port: 443/tcp, service: Kibana, reachable_from: Data Engineering, SRE and control-room networks, auth: Keycloak OIDC (MFA)}
+  - {port: 443/tcp, service: Grafana, reachable_from: Data Engineering and SRE networks, auth: Keycloak OIDC (MFA)}
+  - {port: 9200/tcp, service: Elasticsearch REST, reachable_from: Data cluster and bastion, auth: TLS + role-based API keys}
+  - {port: 9093/tcp, service: Kafka (SASL_SSL), reachable_from: Data cluster, producing systems, auth: SASL/SCRAM + ACLs}
+  - {port: 5432/tcp, service: PostgreSQL warehouse, reachable_from: Data cluster and bastion, auth: SCRAM + TLS}
+controls:
+  - {control: Not reachable from the internet, status: In place, verified: 2026-05-20, notes: No ingress; egress through the proxy for partner feeds.}
+  - {control: SSO with MFA for staff on all web applications, status: In place, verified: 2026-05-20, notes: Two local FAB break-glass accounts in Airflow.}
+  - {control: Read-only warehouse connections for Metabase; sandboxing per group, status: In place, verified: 2026-05-20, notes: Row-level security on the HR mart.}
+  - {control: Least privilege for model deployment and connection editing, status: Partial, verified: 2026-05-20, notes: Privileges reviewed quarterly; counts in section 5.}
+  - {control: Weekly authenticated vulnerability scan; container images scanned in Harbor, status: In place, verified: 2026-05-25, notes: All hosts and images.}
+  - {control: Centralised logging to the SIEM, status: In place, verified: 2026-05-20, notes: Audit logs of Airflow, Metabase, Elasticsearch, Kibana, Grafana.}
+  - {control: Backups and replay of pipelines, status: In place, verified: 2026-05-02, notes: See Appendix B.}
+findings:
+  - {id: F-2026-041, severity: Medium, text: Two local break-glass accounts in Airflow use FAB passwords without MFA., owner: Data Engineering, due: 2026-09-30}
+  - {id: F-2026-042, severity: Low, text: The Metabase H2 sample database is still present on the production instance., owner: Data Engineering, due: 2026-08-31}
+  - {id: F-2026-043, severity: Medium, text: Grafana plugins are installed from the public catalogue without an allowlist., owner: Data Engineering, due: 2026-10-31}
+contacts:
+  - {role: Owner Team lead, name: Yuki Tanaka, contact: yuki.tanaka@larkspur-logistics.example}
+  - {role: Technical lead (Airflow and warehouse), name: Mateusz Nowak, contact: mateusz.nowak@larkspur-logistics.example}
+  - {role: Technical lead (Elastic stack and Kafka), name: Chloé Dubois, contact: chloe.dubois@larkspur-logistics.example}
+  - {role: Metabase administrator, name: Samuel Adeyemi, contact: samuel.adeyemi@larkspur-logistics.example}
+  - {role: SecOps liaison, name: Priya Nandakumar, contact: secops@larkspur-logistics.example}
+ownership_notes:
+  - |
+    Data Engineering owns the platform. The data cluster's Kubernetes infrastructure is operated by
+    Platform Engineering under the CI/CD platform's processes; application upgrades are Data
+    Engineering's responsibility.
+history:
+  - {date: 2025-03-07, version: "1.0", summary: Initial assessment after the move to the data cluster.}
+  - {date: 2025-11-21, version: "1.1", summary: Airflow 3 migration and Kafka event streams added.}
+  - {date: 2026-05-29, version: "1.2", summary: Annual review; three findings open; privilege counts recorded.}
+service_matrix:
+  - {host: data cluster ingress, port: "443", service: NGINX ingress controller, listens: 198.51.100.139, purpose: Metabase, Airflow, Kibana, Grafana virtual hosts}
+  - {host: dwh-db-01/02, port: "5432", service: PostgreSQL, listens: 198.51.100.160-161, purpose: Warehouse and application databases}
+  - {host: es-data-01..03, port: "9200", service: Elasticsearch, listens: 198.51.100.165-167, purpose: Search and ML}
+  - {host: es-data-01..03, port: "9300", service: Elasticsearch transport, listens: 198.51.100.165-167, purpose: Cluster traffic}
+  - {host: kafka-01..03, port: "9093", service: Kafka SASL_SSL, listens: 198.51.100.170-172, purpose: Event streams}
+operations:
+  - |
+    Backups: the warehouse uses streaming replication and nightly base backups with WAL archiving
+    to the object store (recovery point 15 minutes); Elasticsearch takes nightly snapshots to the
+    object store; Kafka topics are retained for seven days and all pipelines are replayable from the
+    source systems. The Metabase and Airflow application databases are included in the nightly
+    warehouse backup. A restore was exercised on 2026-05-02.
+  - |
+    Change management: component upgrades are scheduled through the weekly CAB; Metabase and the
+    Airflow providers are upgraded monthly, Elasticsearch and Kibana quarterly, Kafka twice a year.
+    Pipeline code changes go through merge requests and the GitLab deployment pipeline.
+changelog:
+  - {date: 2026-03-06, change: Elasticsearch and Kibana upgraded to 9.4.2., approved_by: CAB}
+  - {date: 2026-04-10, change: Airflow upgraded to 3.1.2; FAB provider 3.7.5 and Kafka provider 1.16.0., approved_by: CAB}
+  - {date: 2026-05-08, change: Metabase upgraded to 1.58.12., approved_by: CAB}
+  - {date: 2026-05-15, change: Grafana upgraded to 12.1.0., approved_by: CAB}

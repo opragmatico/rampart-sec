@@ -1,0 +1,237 @@
+id: customer-portal
+name: Customer Portal and Booking API
+title: System Risk Assessment — Customer Portal and Booking API
+doc_id: SRA-2026-01
+version: "2.3"
+assessment_date: 2026-06-05
+next_review: 2026-12-05
+assessor: Security Operations (SecOps), with Digital Channels Engineering
+owner_team: Digital Channels Engineering
+exposure: internet-facing
+data_classification: Restricted
+purpose: |
+  This assessment records the architecture, software inventory, exposure and controls of the
+  Customer Portal and Booking API as deployed on the assessment date, so that SecOps can correlate
+  newly disclosed vulnerabilities with what the system actually runs, and so that the Owner Team
+  has an agreed baseline for change. It covers the production environment in the Rotterdam data
+  centre and the DMZ in front of it. The staging environment shares the design but is reachable
+  only from the engineering network and is covered by its own change record.
+overview:
+  - |
+    The Customer Portal is the public web application through which Larkspur's customers create
+    bookings, track shipments, download documents and manage their accounts. The Booking API behind
+    it is the same capability for partner integrations (freight forwarders and customer ERP systems)
+    using OAuth2 client credentials. About 18,000 customer users and 140 partner integrations use
+    the system; it handles roughly 2.1 million requests per day with peaks at the start of each
+    working day in Europe and East Asia.
+  - |
+    The system processes personal data of customer contacts (names, business e-mail addresses,
+    phone numbers), commercial data (rates, volumes, consignee details) and payment references.
+    Card data is never stored: payments are tokenised by the external payment provider and only the
+    provider's token and the last four digits are retained. Under the data classification standard
+    the system is rated Restricted because of the volume of customer personal data and the commercial
+    sensitivity of booking and rate information. Availability tier is Tier 1 (24x7, four-hour
+    recovery objective).
+  - |
+    Authentication for customers and partners is delegated to the company's Keycloak identity
+    provider (OpenID Connect for the portal, OAuth2 client credentials for the API). Administrative
+    access to every host is through the management bastion with multi-factor authentication.
+architecture:
+  - |
+    Inbound traffic terminates on a pair of Citrix NetScaler ADC appliances in the DMZ, which provide
+    TLS termination, the web application firewall policy, rate limiting and load balancing. Behind the
+    ADCs, two NGINX Plus hosts serve the portal's static assets and reverse-proxy API traffic to the
+    Booking API. The Booking API is a Spring MVC application packaged as a WAR and deployed on Apache
+    Tomcat across three application hosts on the internal segment. State lives in a PostgreSQL
+    primary with a streaming replica, and Redis holds sessions and short-lived rate-limit counters.
+  - |
+    Certificates for the internal hops are issued by the company CA. The application hosts run a
+    certificate enrolment agent that renews host certificates over the Certificate Management
+    Protocol (CMP) against the CA, using a locally built OpenSSL 3.5 toolchain because the
+    distribution's OpenSSL lacks the CMP client features the agent needs.
+hosts:
+  - {hostname: edge-adc-01.dmz.corp.example, ip: 203.0.113.10, zone: DMZ, role: NetScaler ADC (active), os: NetScaler 14.1}
+  - {hostname: edge-adc-02.dmz.corp.example, ip: 203.0.113.11, zone: DMZ, role: NetScaler ADC (standby), os: NetScaler 14.1}
+  - {hostname: portal-web-01.dmz.corp.example, ip: 203.0.113.21, zone: DMZ, role: NGINX Plus reverse proxy, os: Ubuntu 24.04 LTS}
+  - {hostname: portal-web-02.dmz.corp.example, ip: 203.0.113.22, zone: DMZ, role: NGINX Plus reverse proxy, os: Ubuntu 24.04 LTS}
+  - {hostname: booking-api-01.corp.example, ip: 198.51.100.31, zone: Internal, role: Tomcat application server, os: RHEL 9.5}
+  - {hostname: booking-api-02.corp.example, ip: 198.51.100.32, zone: Internal, role: Tomcat application server, os: RHEL 9.5}
+  - {hostname: booking-api-03.corp.example, ip: 198.51.100.33, zone: Internal, role: Tomcat application server, os: RHEL 9.5}
+  - {hostname: sso-01.corp.example, ip: 198.51.100.41, zone: Internal, role: Keycloak identity provider, os: RHEL 9.5}
+  - {hostname: sso-02.corp.example, ip: 198.51.100.42, zone: Internal, role: Keycloak identity provider, os: RHEL 9.5}
+  - {hostname: portal-db-01.corp.example, ip: 198.51.100.51, zone: Internal, role: PostgreSQL primary, os: RHEL 9.5}
+  - {hostname: portal-db-02.corp.example, ip: 198.51.100.52, zone: Internal, role: PostgreSQL streaming replica, os: RHEL 9.5}
+  - {hostname: portal-cache-01.corp.example, ip: 198.51.100.55, zone: Internal, role: Redis session and rate-limit store, os: RHEL 9.5}
+  - {hostname: bastion-01.mgmt.corp.example, ip: 192.0.2.5, zone: Management, role: SSH bastion (MFA), os: Ubuntu 24.04 LTS}
+components:
+  - product: Citrix NetScaler ADC
+    vendor: Citrix (Cloud Software Group)
+    version: 14.1-72.18
+    role: Edge load balancer, TLS termination, WAF
+    deployed_on: edge-adc-01, edge-adc-02
+    cves: [CVE-2026-88771, CVE-2026-88772, CVE-2026-88773]
+    notes: |
+      The ADC pair terminates all customer and partner TLS, enforces the WAF policy (OWASP core rule
+      set profile tuned for the portal), applies per-client rate limits on the API and load-balances to
+      the NGINX Plus hosts. The Gateway feature set is licensed but not enabled: no VPN or ICA proxy
+      virtual servers are configured. Firmware is build 14.1-72.18, applied in March 2026; the vendor
+      had published a newer 14.1 build by the assessment date, which finding F-2026-013 tracks.
+      Management access is restricted to the management network and the SecOps jump host.
+  - product: NGINX Plus
+    vendor: F5
+    version: R35
+    role: Reverse proxy and static content for the portal
+    deployed_on: portal-web-01, portal-web-02
+    cves: [CVE-2026-42533]
+    notes: |
+      NGINX Plus R35 serves the portal's static bundle and proxies /api traffic to the Booking API
+      pool with active health checks. The configuration uses several map directives with regular
+      expression matching to derive routing and logging variables from request headers, which is the
+      standard pattern in the portal's configuration templates. The hosts run Ubuntu 24.04 with
+      unattended security updates for the operating system; NGINX Plus itself is upgraded manually
+      with each F5 release.
+  - product: Apache Tomcat
+    vendor: Apache Software Foundation
+    version: 10.1.55
+    role: Servlet container for the Booking API
+    deployed_on: booking-api-01, booking-api-02, booking-api-03
+    cves: [CVE-2026-65637, CVE-2026-65905, CVE-2026-55276]
+    notes: |
+      Tomcat 10.1.55 hosts the Booking API WAR. The container is run under a dedicated service account
+      with the manager and host-manager applications removed. Authentication is not performed by
+      Tomcat: the application validates OAuth2 bearer tokens issued by Keycloak, and no Tomcat realm,
+      DIGEST or BASIC authenticator is configured in any context. The HTTP connector listens only on
+      the internal segment and accepts traffic from the NGINX Plus hosts.
+  - product: Spring Framework
+    vendor: Broadcom (VMware Tanzu)
+    version: 6.2.15
+    role: Application framework of the Booking API (Spring MVC)
+    deployed_on: booking-api-01, booking-api-02, booking-api-03
+    cves: [CVE-2026-47884, CVE-2026-59283]
+    notes: |
+      The Booking API is a Spring Boot 3.5 application on Spring Framework 6.2.15. It is a REST
+      service: controllers return JSON and no server-side view technology (JSP, Thymeleaf, XSLT) is
+      configured, and there is no catch-all request mapping. Spring Expression Language is used in
+      method-security annotations with the default evaluation context. The application is built on
+      the CI/CD platform and promoted through staging by the Owner Team.
+  - product: Keycloak
+    vendor: Keycloak project (Red Hat sponsored)
+    version: 26.2.5
+    role: Identity provider for customers, partners and staff
+    deployed_on: sso-01, sso-02
+    cves: [CVE-2026-18963]
+    notes: |
+      Keycloak 26.2.5 runs as a two-node cluster with its own PostgreSQL schema on the portal
+      database. The customer realm has self-service registration and the forgot-password
+      (reset-credentials) flow enabled, with e-mail verification; the staff realm federates to the
+      corporate directory and requires MFA. The admin console is reachable only from the management
+      network. Keycloak is shared with the Collaboration Suite and the Data and Analytics Platform,
+      which use the staff realm.
+  - product: OpenSSL
+    vendor: OpenSSL project
+    version: 3.5.4
+    role: TLS and CMP client library for the certificate enrolment agent
+    deployed_on: booking-api-01, booking-api-02, booking-api-03
+    cves: [CVE-2026-63073]
+    notes: |
+      A locally built OpenSSL 3.5.4 under /opt/larkspur/openssl provides the CMP client used by the
+      certificate enrolment agent to renew host certificates from the internal CA every 30 days. The
+      agent pins the CA's server certificate. This build is separate from the distribution's OpenSSL
+      and is not picked up by the operating system's patch process; it is rebuilt by the Owner Team.
+  - product: PostgreSQL
+    vendor: PostgreSQL Global Development Group
+    version: 17.4
+    role: Primary database (bookings, accounts, Keycloak schema)
+    deployed_on: portal-db-01, portal-db-02
+    cves: []
+    notes: |
+      PostgreSQL 17.4 with streaming replication to the replica, TLS between application and
+      database, and role separation between the application, Keycloak and reporting users. Backups
+      are described in Appendix B.
+  - product: Redis
+    vendor: Redis Ltd
+    version: 7.4.2
+    role: Session store and rate-limit counters
+    deployed_on: portal-cache-01
+    cves: []
+    notes: |
+      A single Redis 7.4.2 instance holds short-lived session data and rate-limit counters. It is
+      reachable only from the application hosts; it is not configured with TLS (finding F-2026-012)
+      and runs with a password set through the application's secret store.
+exposure_notes:
+  - |
+    The system is internet-facing: the portal and the Booking API are reachable from any network on
+    TCP 443 through the NetScaler ADC pair. No other service is exposed to the internet. The DMZ
+    hosts can reach only the Booking API pool on the internal segment; the internal hosts have no
+    route to the internet except through the egress proxy for the payment provider and the e-mail
+    relay.
+  - |
+    The legacy partner endpoint /partner/v1 still accepts TLS 1.0 and 1.1 for two partners whose
+    integration has not been migrated; this is finding F-2026-011. All other listeners require TLS
+    1.2 or 1.3.
+endpoints:
+  - {port: 443/tcp, service: Customer Portal (HTTPS), reachable_from: Internet, auth: Keycloak OIDC (customers)}
+  - {port: 443/tcp, service: Booking API /api/v2 (HTTPS), reachable_from: Internet, auth: OAuth2 client credentials (partners)}
+  - {port: 443/tcp, service: Legacy partner endpoint /partner/v1, reachable_from: Internet (two partner IP ranges), auth: mutual TLS + API key}
+  - {port: 8443/tcp, service: Keycloak admin console, reachable_from: Management network, auth: Staff realm, MFA}
+  - {port: 5432/tcp, service: PostgreSQL, reachable_from: Internal segment (application hosts), auth: SCRAM + TLS}
+  - {port: 6379/tcp, service: Redis, reachable_from: Internal segment (application hosts), auth: Password, no TLS}
+  - {port: 22/tcp, service: SSH, reachable_from: Management bastion only, auth: Key + MFA at the bastion}
+controls:
+  - {control: Web application firewall (NetScaler AppFW, OWASP CRS profile), status: In place, verified: 2026-05-28, notes: Blocking mode; tuned exclusions for the booking form. Does not protect the ADC itself.}
+  - {control: Network segmentation DMZ / internal / management, status: In place, verified: 2026-05-20, notes: Firewall rules reviewed quarterly.}
+  - {control: Multi-factor authentication for administrative access, status: In place, verified: 2026-05-20, notes: Bastion and Keycloak staff realm.}
+  - {control: TLS 1.2+ on all listeners, status: Partial, verified: 2026-06-01, notes: Exception on /partner/v1 (F-2026-011).}
+  - {control: Weekly authenticated vulnerability scan, status: In place, verified: 2026-06-01, notes: Scanner covers hosts; the NetScaler appliances are scanned unauthenticated.}
+  - {control: Centralised logging to the SIEM, status: In place, verified: 2026-05-20, notes: ADC, NGINX, Tomcat access and application logs; 13 months retention.}
+  - {control: Rate limiting on the Booking API, status: In place, verified: 2026-05-28, notes: Per client id, 600 requests per minute.}
+  - {control: Secrets in the central secret store, status: In place, verified: 2026-05-20, notes: Database and Redis credentials; no secrets in configuration files.}
+findings:
+  - {id: F-2026-011, severity: Medium, text: TLS 1.0 and 1.1 still accepted on the legacy partner endpoint /partner/v1 for two partners., owner: Digital Channels Engineering, due: 2026-09-30}
+  - {id: F-2026-012, severity: Low, text: Redis traffic on the internal segment is not encrypted., owner: Digital Channels Engineering, due: 2026-12-31}
+  - {id: F-2026-013, severity: Medium, text: NetScaler firmware build 14.1-72.18 is behind the vendor's current 14.1 build; upgrade window to be scheduled with the CAB., owner: Digital Channels Engineering, due: 2026-09-15}
+contacts:
+  - {role: Owner Team lead, name: Tomas Berglund, contact: tomas.berglund@larkspur-logistics.example}
+  - {role: Technical lead (application), name: Mara Lindqvist, contact: mara.lindqvist@larkspur-logistics.example}
+  - {role: Platform contact (ADC and NGINX), name: Joost van der Meer, contact: joost.vandermeer@larkspur-logistics.example}
+  - {role: SecOps liaison, name: Priya Nandakumar, contact: secops@larkspur-logistics.example}
+  - {role: 24x7 on-call, name: Digital Channels rota, contact: pager alias dc-oncall}
+ownership_notes:
+  - |
+    Digital Channels Engineering owns the application, the NGINX Plus configuration and the Tomcat
+    hosts. The NetScaler appliances are operated by Digital Channels with firmware changes executed
+    by the Network team under a joint change record. Keycloak is owned by Digital Channels on behalf
+    of all consuming systems.
+history:
+  - {date: 2024-06-14, version: "1.0", summary: Initial assessment after the portal re-platform.}
+  - {date: 2025-06-20, version: "2.0", summary: Keycloak replaces the in-house login; NetScaler ADC replaces the previous load balancer.}
+  - {date: 2025-12-02, version: "2.2", summary: Interim review after the payment tokenisation change.}
+  - {date: 2026-06-05, version: "2.3", summary: Annual review; three findings open; firmware lag noted.}
+service_matrix:
+  - {host: edge-adc-01/02, port: "443", service: HTTPS vServer, listens: 203.0.113.10-11, purpose: Portal and API ingress}
+  - {host: edge-adc-01/02, port: "3010", service: NetScaler management, listens: 192.0.2.0/24 only, purpose: Appliance administration}
+  - {host: portal-web-01/02, port: "443", service: NGINX Plus, listens: 203.0.113.21-22, purpose: Static content and API proxy}
+  - {host: portal-web-01/02, port: "8080", service: NGINX Plus API, listens: 127.0.0.1, purpose: Health and metrics}
+  - {host: booking-api-01..03, port: "8443", service: Tomcat HTTPS, listens: 198.51.100.31-33, purpose: Booking API}
+  - {host: sso-01/02, port: "8443", service: Keycloak, listens: 198.51.100.41-42, purpose: OIDC / OAuth2}
+  - {host: portal-db-01/02, port: "5432", service: PostgreSQL, listens: 198.51.100.51-52, purpose: Database}
+  - {host: portal-cache-01, port: "6379", service: Redis, listens: 198.51.100.55, purpose: Sessions and rate limits}
+operations:
+  - |
+    Backups: PostgreSQL uses streaming replication to portal-db-02 and a nightly base backup with
+    continuous WAL archiving to the object store in the secondary data centre; the recovery point
+    objective is 15 minutes and the recovery time objective four hours, last exercised on 2026-04-22.
+    Redis data is not backed up (sessions are re-created on login). NetScaler and NGINX configurations
+    are exported nightly to the configuration repository.
+  - |
+    Change management: routine changes go through the weekly CAB; emergency security changes use the
+    emergency change procedure with retrospective CAB review. Application releases are deployed by
+    the Owner Team's pipeline on the CI/CD platform, with a canary on booking-api-01 for one hour
+    before the remaining hosts. Firmware upgrades on the ADC pair are performed on the standby node
+    first with a failover test.
+changelog:
+  - {date: 2026-03-14, change: NetScaler firmware upgraded to 14.1-72.18 on both appliances., approved_by: CAB}
+  - {date: 2026-04-02, change: Tomcat upgraded to 10.1.55 and Spring Framework to 6.2.15 with release 2026.4 of the Booking API., approved_by: CAB}
+  - {date: 2026-04-30, change: Keycloak upgraded to 26.2.5., approved_by: CAB}
+  - {date: 2026-05-12, change: Certificate enrolment agent rebuilt against OpenSSL 3.5.4., approved_by: Owner Team}
+  - {date: 2026-05-27, change: NGINX Plus upgraded to R35 on both proxy hosts., approved_by: CAB}

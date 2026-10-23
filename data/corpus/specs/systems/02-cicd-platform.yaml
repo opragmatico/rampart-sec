@@ -1,0 +1,234 @@
+id: cicd-platform
+name: CI/CD and Artifact Platform
+title: System Risk Assessment — CI/CD and Artifact Platform
+doc_id: SRA-2026-02
+version: "1.4"
+assessment_date: 2026-05-22
+next_review: 2026-11-22
+assessor: Security Operations (SecOps), with Platform Engineering
+owner_team: Platform Engineering
+exposure: internal
+data_classification: Confidential
+purpose: |
+  This assessment documents the source control, build, artifact and deployment tooling that every
+  engineering team at Larkspur depends on. Because the platform holds source code, build secrets
+  and the signing material for container images, and because it has credentials to deploy into
+  production clusters, a compromise of this system is a compromise of everything built on it. The
+  assessment records what the platform runs and how it is reached so that SecOps can judge new
+  vulnerabilities quickly.
+overview:
+  - |
+    The platform consists of a self-managed GitLab Enterprise Edition instance for source control,
+    merge requests and CI pipelines; a Jenkins controller kept for the legacy warehouse-management
+    build jobs that have not been migrated to GitLab CI; a JFrog Artifactory pair as the artifact
+    repository and proxy for external package registries; a Harbor registry for container images;
+    and a Kubernetes cluster that runs the GitLab runners, Argo CD and the shared build services.
+    About 310 engineers and 60 service accounts use the platform; it executes around 4,000 pipeline
+    jobs per day.
+  - |
+    Data classification is Confidential: the platform holds all application source code, CI
+    variables (some of them credentials for downstream systems), image signing keys and the
+    deployment credentials Argo CD uses for the production clusters. It does not process customer
+    data. Availability tier is Tier 2 (business hours, eight-hour recovery objective); an outage
+    stops releases but not operations.
+  - |
+    Staff authenticate through the corporate Keycloak staff realm with MFA. Three Jenkins service
+    accounts still use local credentials (finding F-2026-021). Platform Engineering administers
+    the hosts through the management bastion.
+architecture:
+  - |
+    All components sit on the internal engineering segment and are reachable only from the
+    engineering VPN and the office networks; there is no internet ingress. Outbound access to
+    public package registries (PyPI, npm, Maven Central, Docker Hub) goes through Artifactory's
+    remote repositories via the egress proxy, so build hosts themselves have no direct internet
+    route. GitLab runners and Jenkins agents run as pods in the platform Kubernetes cluster; Jenkins
+    agents connect inbound to the controller over the JNLP (Remoting) port.
+  - |
+    Argo CD in the same cluster watches the deployment repositories in GitLab and applies manifests to
+    the production and staging clusters using cluster-scoped credentials stored as Argo CD cluster
+    secrets. Harbor stores the images produced by the pipelines and is the only registry the
+    production clusters are allowed to pull from.
+hosts:
+  - {hostname: gitlab-01.corp.example, ip: 198.51.100.60, zone: Internal (engineering), role: GitLab EE application and bundled PostgreSQL, os: Ubuntu 24.04 LTS}
+  - {hostname: gitlab-gitaly-01.corp.example, ip: 198.51.100.65, zone: Internal (engineering), role: Gitaly repository storage, os: Ubuntu 24.04 LTS}
+  - {hostname: jenkins-01.corp.example, ip: 198.51.100.70, zone: Internal (engineering), role: Jenkins LTS controller, os: RHEL 9.5}
+  - {hostname: artifactory-01.corp.example, ip: 198.51.100.75, zone: Internal (engineering), role: JFrog Artifactory (primary), os: RHEL 9.5}
+  - {hostname: artifactory-02.corp.example, ip: 198.51.100.76, zone: Internal (engineering), role: JFrog Artifactory (secondary), os: RHEL 9.5}
+  - {hostname: harbor-01.corp.example, ip: 198.51.100.85, zone: Internal (engineering), role: Harbor container registry, os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-plat-cp-01.corp.example, ip: 198.51.100.80, zone: Internal (engineering), role: Kubernetes control plane, os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-plat-cp-02.corp.example, ip: 198.51.100.81, zone: Internal (engineering), role: Kubernetes control plane, os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-plat-cp-03.corp.example, ip: 198.51.100.82, zone: Internal (engineering), role: Kubernetes control plane, os: Ubuntu 24.04 LTS}
+  - {hostname: k8s-plat-w-01..06.corp.example, ip: 198.51.100.90-95, zone: Internal (engineering), role: Kubernetes workers (runners, Argo CD, Jenkins agents), os: Ubuntu 24.04 LTS}
+  - {hostname: bastion-01.mgmt.corp.example, ip: 192.0.2.5, zone: Management, role: SSH bastion (MFA), os: Ubuntu 24.04 LTS}
+components:
+  - product: GitLab Enterprise Edition
+    vendor: GitLab Inc.
+    version: 19.2.4
+    role: Source control, merge requests, CI/CD pipelines
+    deployed_on: gitlab-01, gitlab-gitaly-01
+    cves: [CVE-2026-85706, CVE-2026-87719, CVE-2026-89078]
+    notes: |
+      GitLab EE 19.2.4 (Omnibus package) with the bundled PostgreSQL and Redis, Gitaly on a separate
+      host, and the Ultimate feature set licensed, including GitLab Duo Chat which is enabled for
+      all engineering groups. The repository commits API is used by the release tooling and by
+      Argo CD. CI/CD configuration is parsed from .gitlab-ci.yml files in every project; projects
+      may define their own regular expressions in rules and artifact settings. The instance is
+      upgraded on the vendor's monthly cadence by Platform Engineering, usually within three weeks of
+      a release.
+  - product: JFrog Artifactory
+    vendor: JFrog
+    version: 7.111.12
+    role: Artifact repository and remote proxy for public registries
+    deployed_on: artifactory-01, artifactory-02
+    cves: [CVE-2026-82329, CVE-2026-42016, CVE-2026-42018]
+    notes: |
+      Artifactory 7.111.12 Self-Hosted runs as an active-passive pair with a shared filestore.
+      Anonymous access is disabled: every download requires an identity or access token, and build
+      pipelines use short-lived scoped tokens issued at job start. The default configuration from the
+      vendor installer is in use apart from the authentication settings, the SSO integration with
+      Keycloak and the repository layout. The pair is reachable from the engineering VPN, the
+      platform cluster and the production clusters' image pull path.
+  - product: Jenkins
+    vendor: Jenkins project
+    version: 2.568.1
+    role: Legacy build controller for the warehouse-management jobs
+    deployed_on: jenkins-01
+    cves: [CVE-2026-70426, CVE-2026-84645]
+    notes: |
+      Jenkins LTS 2.568.1 remains in service for 23 legacy jobs of the warehouse-management system
+      that depend on Groovy pipeline libraries not yet ported to GitLab CI. Eleven agents connect
+      inbound over the JNLP Remoting port from pods in the platform cluster; the agent connection
+      secret is stored in the cluster. Users with Agent/Connect permission are the agent service
+      accounts and the three legacy service accounts noted in F-2026-021. The controller is upgraded
+      on the LTS line about once a quarter.
+  - product: Jenkins Script Security Plugin
+    vendor: Jenkins project
+    version: 1402.v94c9ce464861
+    role: Sandbox for Groovy pipeline scripts on the Jenkins controller
+    deployed_on: jenkins-01
+    cves: [CVE-2026-57280]
+    notes: |
+      The Script Security Plugin sandboxes the Groovy used by the legacy pipeline jobs. Engineers
+      with Job/Configure permission on the legacy folder can edit pipeline scripts, which the sandbox
+      is expected to contain. Plugin updates are applied together with the quarterly controller
+      upgrade.
+  - product: Argo CD
+    vendor: Argo project (CNCF)
+    version: 3.3.12
+    role: GitOps deployment to the staging and production clusters
+    deployed_on: platform Kubernetes cluster (namespace argocd)
+    cves: [CVE-2026-77459, CVE-2026-55797]
+    notes: |
+      Argo CD 3.3.12 runs in the platform cluster and holds cluster credentials for staging and
+      production. Applications are defined per team with PostDelete hooks used by two teams for
+      database migrations. The repo-server is reachable from all namespaces in the platform cluster
+      because network policies have not yet been applied to the argocd namespace (finding
+      F-2026-023). SSO is through Keycloak with role mapping by group.
+  - product: Harbor
+    vendor: Harbor project (CNCF)
+    version: 2.15.1
+    role: Container image registry with vulnerability scanning
+    deployed_on: harbor-01
+    cves: [CVE-2026-92770]
+    notes: |
+      Harbor 2.15.1 stores the images built by the pipelines, signs them with the platform's cosign
+      key and scans them with the bundled Trivy scanner. Project administrators are the team leads
+      of each engineering team; a second scanner registration (the commercial scanner evaluated in
+      Q1) is still configured with its API credentials. Production clusters are configured to pull
+      only from this registry.
+  - product: Kubernetes
+    vendor: Kubernetes project (CNCF)
+    version: 1.33.2
+    role: Platform cluster for runners, agents, Argo CD and shared services
+    deployed_on: k8s-plat-cp-01..03, k8s-plat-w-01..06
+    cves: []
+    notes: |
+      A nine-node cluster deployed with kubeadm, containerd runtime, Cilium networking. Network
+      policies are enforced in the runner namespaces but not yet in the argocd namespace. The API
+      server is reachable from the Platform Engineering workstations and the bastion only.
+  - product: Docker Engine
+    vendor: Docker Inc.
+    version: "28.1.1"
+    role: Image builds on the dedicated build nodes
+    deployed_on: k8s-plat-w-05, k8s-plat-w-06
+    cves: []
+    notes: |
+      Two worker nodes run Docker Engine for pipeline jobs that need a Docker daemon (image builds for
+      the legacy jobs). Rootless mode is not enabled; the daemon socket is exposed only to the
+      runner pods pinned to these nodes.
+exposure_notes:
+  - |
+    The platform is internal: nothing is reachable from the internet, and the hosts have no direct
+    internet route. Reachability from the engineering VPN and the office networks is broad by design
+    (every engineer uses GitLab), so the practical attack surface is any engineer's workstation or
+    VPN credential, plus the pipeline content that engineers control.
+  - |
+    Build pipelines execute code from merge requests, including from contractors' forks after a
+    maintainer approves the pipeline, so the runner namespaces are treated as hostile and isolated
+    with network policies. The Jenkins controller and Artifactory are reachable from the runner
+    namespaces because jobs need them.
+endpoints:
+  - {port: 443/tcp, service: GitLab web and API, reachable_from: Engineering VPN and office networks, auth: Keycloak staff realm (MFA); project and personal access tokens}
+  - {port: 22/tcp, service: GitLab SSH (git), reachable_from: Engineering VPN and office networks, auth: SSH keys}
+  - {port: 8443/tcp, service: Jenkins web and API, reachable_from: Engineering VPN, auth: Keycloak staff realm; three local service accounts}
+  - {port: 50000/tcp, service: Jenkins JNLP (Remoting) agent port, reachable_from: Platform cluster runner namespaces, auth: Agent secret}
+  - {port: 8082/tcp, service: Artifactory web, API and repositories, reachable_from: Engineering VPN, platform cluster, production image pull path, auth: Keycloak SSO; scoped access tokens; anonymous access disabled}
+  - {port: 443/tcp, service: Harbor registry and UI, reachable_from: Engineering VPN, platform and production clusters, auth: Keycloak OIDC; robot accounts}
+  - {port: 443/tcp, service: Argo CD UI and API, reachable_from: Engineering VPN, auth: Keycloak OIDC with group roles}
+  - {port: 6443/tcp, service: Kubernetes API (platform cluster), reachable_from: Platform Engineering workstations and bastion, auth: OIDC + RBAC}
+controls:
+  - {control: No internet ingress; egress only through the proxy allowlist, status: In place, verified: 2026-05-15, notes: Remote repositories in Artifactory are the only path to public registries.}
+  - {control: SSO with MFA for staff, status: Partial, verified: 2026-05-15, notes: Three Jenkins local service accounts without MFA (F-2026-021).}
+  - {control: Short-lived scoped tokens for pipeline access to Artifactory, status: In place, verified: 2026-05-15, notes: Issued per job; 2-hour lifetime.}
+  - {control: Runner namespace isolation (network policies), status: In place, verified: 2026-05-10, notes: Not applied to the argocd namespace (F-2026-023).}
+  - {control: Image signing and admission policy on production clusters, status: In place, verified: 2026-05-10, notes: cosign signatures verified at admission.}
+  - {control: Weekly authenticated vulnerability scan, status: In place, verified: 2026-05-18, notes: All hosts; container images scanned in Harbor on push.}
+  - {control: Centralised logging to the SIEM, status: In place, verified: 2026-05-15, notes: GitLab audit events, Jenkins audit trail, Artifactory access log, Kubernetes audit log.}
+  - {control: Backups of repositories and artifacts, status: In place, verified: 2026-04-28, notes: See Appendix B.}
+findings:
+  - {id: F-2026-021, severity: High, text: Three Jenkins service accounts use local passwords without MFA and hold Agent/Connect and Job/Configure permissions., owner: Platform Engineering, due: 2026-08-31}
+  - {id: F-2026-022, severity: Medium, text: GitLab runner registration tokens have not been rotated for more than twelve months., owner: Platform Engineering, due: 2026-09-30}
+  - {id: F-2026-023, severity: Medium, text: The argocd namespace has no network policy; the repo-server is reachable from every namespace in the platform cluster., owner: Platform Engineering, due: 2026-09-30}
+  - {id: F-2026-024, severity: Low, text: A second scanner registration in Harbor with live API credentials remains from the Q1 evaluation., owner: Platform Engineering, due: 2026-10-31}
+contacts:
+  - {role: Owner Team lead, name: Aisha Okonkwo, contact: aisha.okonkwo@larkspur-logistics.example}
+  - {role: Technical lead (GitLab and Artifactory), name: Daniel Kowalczyk, contact: daniel.kowalczyk@larkspur-logistics.example}
+  - {role: Technical lead (Kubernetes and Argo CD), name: Sofia Marchetti, contact: sofia.marchetti@larkspur-logistics.example}
+  - {role: Legacy Jenkins maintainer, name: Henrik Dahl, contact: henrik.dahl@larkspur-logistics.example}
+  - {role: SecOps liaison, name: Priya Nandakumar, contact: secops@larkspur-logistics.example}
+ownership_notes:
+  - |
+    Platform Engineering owns every component of the platform. The legacy Jenkins jobs are owned by
+    the Warehouse Systems team, which is responsible for migrating them to GitLab CI by the end of
+    2026; until then Platform Engineering operates the controller.
+history:
+  - {date: 2025-02-10, version: "1.0", summary: Initial assessment of the consolidated platform.}
+  - {date: 2025-11-18, version: "1.2", summary: Harbor and image signing added; Jenkins scope reduced to legacy jobs.}
+  - {date: 2026-05-22, version: "1.4", summary: Annual review; four findings open; Argo CD network policy gap recorded.}
+service_matrix:
+  - {host: gitlab-01, port: "443", service: GitLab (nginx bundled), listens: 198.51.100.60, purpose: Web, API, container registry proxy}
+  - {host: gitlab-01, port: "22", service: GitLab Shell, listens: 198.51.100.60, purpose: Git over SSH}
+  - {host: gitlab-gitaly-01, port: "8075", service: Gitaly, listens: 198.51.100.65, purpose: Repository storage RPC}
+  - {host: jenkins-01, port: "8443", service: Jenkins, listens: 198.51.100.70, purpose: Controller UI and API}
+  - {host: jenkins-01, port: "50000", service: Jenkins Remoting, listens: 198.51.100.70, purpose: Inbound agents}
+  - {host: artifactory-01/02, port: "8082", service: Artifactory, listens: 198.51.100.75-76, purpose: Repositories and API}
+  - {host: harbor-01, port: "443", service: Harbor, listens: 198.51.100.85, purpose: Registry and UI}
+  - {host: k8s-plat-cp-01..03, port: "6443", service: kube-apiserver, listens: 198.51.100.80-82, purpose: Cluster API}
+operations:
+  - |
+    Backups: GitLab takes a nightly backup (repositories, database, uploads) to the object store with
+    30-day retention; Gitaly storage is snapshotted every six hours. Artifactory's filestore is
+    replicated to the secondary node and backed up weekly; the configuration is exported nightly.
+    Harbor's database and storage are backed up nightly. Restores of GitLab and Artifactory were
+    exercised on 2026-04-28 (recovery time six hours).
+  - |
+    Change management: component upgrades are scheduled through the weekly CAB and executed outside
+    business hours in Europe. GitLab follows the vendor's monthly release within three weeks;
+    Artifactory and Harbor are upgraded quarterly; Jenkins LTS quarterly. Emergency security upgrades
+    use the emergency change procedure and are announced to engineering on the status channel.
+changelog:
+  - {date: 2026-02-20, change: Argo CD upgraded to 3.3.12., approved_by: CAB}
+  - {date: 2026-03-27, change: Artifactory upgraded to 7.111.12 on both nodes., approved_by: CAB}
+  - {date: 2026-04-11, change: Jenkins LTS upgraded to 2.568.1; Script Security Plugin updated to 1402.v94c9ce464861., approved_by: CAB}
+  - {date: 2026-04-25, change: Harbor upgraded to 2.15.1., approved_by: CAB}
+  - {date: 2026-05-09, change: GitLab EE upgraded to 19.2.4; Duo Chat enabled for engineering groups., approved_by: CAB}
