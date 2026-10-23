@@ -203,7 +203,7 @@ def build_system_pdf(out: Path, company: dict, spec: dict) -> Path:
                 ["Field", "Value"],
                 ["Document id", spec["doc_id"]],
                 ["Version", str(spec["version"])],
-                ["Classification", "INTERNAL — CONFIDENTIAL"],
+                ["Classification", "INTERNAL — CONFIDENTIAL (fictitious)"],
                 ["System", spec["name"]],
                 ["Owner team", spec["owner_team"]],
                 ["Assessment date", str(spec["assessment_date"])],

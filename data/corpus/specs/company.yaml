@@ -12,4 +12,4 @@ ip_ranges:
   management: 192.0.2.0/24
 security_team: Security Operations (SecOps)
 ciso: Ingrid Halvorsen
-classification_banner: "INTERNAL — CONFIDENTIAL. Property of Larkspur Logistics, Inc. Do not distribute outside the company."
+classification_banner: "INTERNAL — CONFIDENTIAL (fictitious). Property of Larkspur Logistics, Inc. Do not distribute outside the company."
