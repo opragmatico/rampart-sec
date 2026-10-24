@@ -2,7 +2,8 @@
 
 They are plain functions over the graph state so that each can be unit-tested without a model,
 a server or a graph (the deterministic parts), and so that every decision lands in
-`guardrail_log` with the scores that produced it.
+`guardrail_log` with the scores that produced it. `rampart.agent.graph` wires them, and its
+`GraphState` declares the keys each one reads and writes.
 """
 
 from __future__ import annotations
