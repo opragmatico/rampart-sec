@@ -16,7 +16,8 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 
 from ..rag.store import CorpusStore
 from ..settings import Settings
-from .llm import GUARD_PROMPTS_VERSION, LlmGuards
+from .llm_classify import CLASSIFIER_PROMPT_VERSION, LlmClassifier
+from .llm_judge import JUDGE_PROMPT_VERSION, LlmJudge
 from .overlap import overlap_ratio
 from .redaction import Redactor
 from .signatures import SignatureIndex
@@ -78,12 +79,19 @@ def parse_envelope(text: str) -> dict[str, Any] | None:
 class Guards:
     """Holds the shared guard components; the graph binds its nodes to one instance."""
 
-    def __init__(self, settings: Settings, store: CorpusStore | None = None, llm: LlmGuards | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        store: CorpusStore | None = None,
+        classifier: LlmClassifier | None = None,
+        judge: LlmJudge | None = None,
+    ):
         self.settings = settings
         self.index = SignatureIndex.load(settings.signatures_path)
         self.redactor = Redactor(settings.internal_domains)
         self.store = store
-        self.llm = llm or LlmGuards(settings)
+        self.classifier = classifier or LlmClassifier(settings)
+        self.judge = judge or LlmJudge(settings)
 
     # ── input guard ──────────────────────────────────────────────────────────
     async def input_guard(self, state: dict, config=None) -> dict:
@@ -101,19 +109,19 @@ class Guards:
             "llm_hit": None,
             "llm_reason": None,
             "llm_error": None,
-            "prompt_version": GUARD_PROMPTS_VERSION,
+            "prompt_version": CLASSIFIER_PROMPT_VERSION,
         }
         if rule_hit:
             log["llm_reason"] = "skipped: layer 1 fired"
             blocked = True
         else:
-            v = await self.llm.classify(query, config)
+            v = await self.classifier.classify(query, config)
             log.update(
                 {
                     "llm_hit": v["hit"],
                     "llm_reason": v["reason"],
                     "llm_error": v["error"],
-                    "llm_model": self.llm.classifier_model,
+                    "llm_model": self.classifier.model,
                 }
             )
             blocked = v["hit"]
@@ -176,7 +184,7 @@ class Guards:
         log: dict[str, Any] = {
             "stage": "output_guard",
             "structured": bool(state.get("final")),
-            "prompt_version": GUARD_PROMPTS_VERSION,
+            "prompt_version": JUDGE_PROMPT_VERSION,
         }
         withheld_why: list[str] = []
 
@@ -228,13 +236,13 @@ class Guards:
             text += DISCLAIMER
 
         # 7. LLM judge (last, on the text the user would see)
-        j = await self.llm.judge_answer(text, config)
+        j = await self.judge.judge_answer(text, config)
         log.update(
             {
                 "judge": j["verdict"],
                 "judge_reasons": j["reasons"],
                 "judge_error": j["error"],
-                "judge_model": self.llm.judge_model,
+                "judge_model": self.judge.model,
             }
         )
         if j["verdict"] != "SAFE":
