@@ -23,7 +23,7 @@ guardrails for those failure modes, with the audit trail a security team needs t
 The company in the documents, **Larkspur Logistics**, is fictitious (RFC 5737 addresses, reserved example
 domains). The software, versions, CVEs and the NVD, EPSS, KEV and advisory data are real; every CVE in the
 corpus was verified against NVD when the corpus was built ([data/corpus/SOURCES.md](data/corpus/SOURCES.md)).
-Design: [docs/DESIGN.md](docs/DESIGN.md). Measured results: [docs/EVALUATION.md](docs/EVALUATION.md).
+Design: [docs/DESIGN.md](docs/DESIGN.md). Guardrail flows: [docs/GUARDRAIL_FLOWS.md](docs/GUARDRAIL_FLOWS.md). Measured results: [docs/EVALUATION.md](docs/EVALUATION.md).
 
 ## Quick start
 
@@ -164,7 +164,7 @@ data/evals      injections.jsonl, benign.jsonl, retrieval_gold.jsonl
 data/signatures injection_signatures.txt
 tests/          unit, recorded (+ cassettes), live
 docker/         Dockerfile, entrypoint; docker-compose.yml at the root
-docs/           DESIGN.md, EVALUATION.md
+docs/           DESIGN.md, EVALUATION.md, GUARDRAIL_FLOWS.md
 ```
 
 ## Provenance
