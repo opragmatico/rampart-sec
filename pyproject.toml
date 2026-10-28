@@ -59,7 +59,7 @@ dev = [
 rampart = "rampart.cli:main"
 
 [project.urls]
-Repository = "https://github.com/opragmatico/rampart-sec-python"
+Repository = "https://github.com/opragmatico/rampart-sec"
 
 [tool.setuptools.packages.find]
 where = ["src"]
