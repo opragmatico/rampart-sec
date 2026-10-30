@@ -13,7 +13,7 @@ guardrails for those failure modes, with the audit trail a security team needs t
 
 | Layer | What it is |
 |---|---|
-| **Tools** | 7 MCP tools over one `FastMCP` definition: NVD, EPSS + KEV, advisories (Tavily), an urgency scorer, the internal documents (RAG), the system inventory, tickets. Served in-process to the agent and at `/mcp` to other clients. One response envelope, validated inputs, retries, rate limits, caching, record/replay cassettes. |
+| **Tools** | 7 tools as plain async functions: NVD, EPSS + KEV, advisories (Tavily), an urgency scorer, the internal documents (RAG), the system inventory, tickets. The agent calls them in-process as LangChain tools; the same functions are served over REST at `/v1/tools` and over MCP at `/mcp` for other agents. One response envelope, validated inputs, retries, rate limits, caching, record/replay cassettes. |
 | **Private knowledge** | Qdrant (local mode or server) + `text-embedding-3-small`; idempotent incremental ingestion; five system risk assessments and one policy, filterable by system. |
 | **Agent** | LangGraph: input guard → agent ⇄ tools → tool guard → output guard, with a structured `final_answer` tool, budgets, SQLite checkpoints and an **approval interrupt** before the only side-effecting tool (`open_ticket`). |
 | **Guardrails** | Input: BM25 signature guard + LLM classifier. Tool results: BM25 scan that removes injected sentences. Output: redaction, softening, citation-evidence and verbatim-overlap checks, disclaimer, LLM judge. Every guard fails closed and logs its scores. |
@@ -69,13 +69,13 @@ endpoints and `/docs` are open.
 | `POST /v1/triage/{thread}/resume` | Approve or decline them (`{"approve_all": bool}` or `{"approved": [bool, …]}`) |
 | `GET /v1/runs`, `GET /v1/runs/{run_id}`, `GET /v1/runs/summary` | The audit log: per run, with the guardrail log; programme-level numbers (blocked by which layer, withheld, cost, latency per node) |
 | `GET /v1/tickets`, `GET /v1/tickets/{id}` | Remediation tickets |
-| `GET /v1/tools`, `POST /v1/tools/{name}` | The seven tools, callable directly over the same MCP session (`open_ticket` is refused: tickets only come from an approved run) |
+| `GET /v1/tools`, `POST /v1/tools/{name}` | The seven tools, callable directly through the same functions the agent calls (`open_ticket` is refused: tickets only come from an approved run) |
 | `GET /v1/corpus`, `POST /v1/corpus/index`, `POST /v1/corpus/search` | What is indexed, incremental ingestion, raw retrieval with the system filter |
 | `POST /v1/guardrails/score` · `/scan` · `/output-check` | Probe the deterministic guard layers: signature score of a question, tool-guard scan and redaction of a text, the output guard's redaction, softening and citation parse |
 | `POST /v1/policy/evaluate` | Severity, priority, deadline and due date under the policy for given evidence |
 | `GET /v1/evals/guardrail[?llm=true]`, `GET /v1/evals/retrieval` | Precision/recall of the input guard per threshold; retriever hit rate on the gold set |
 | `GET /v1/evals/scenarios`, `POST /v1/evals/scenarios` | The six validation scenarios; run them (real model calls) for a pass rate |
-| `POST /mcp` | The MCP endpoint (streamable HTTP) for other agents and clients |
+| `POST /mcp` | The tools over MCP (streamable HTTP), for agents outside Rampart such as Claude Desktop or an IDE |
 
 The OpenAPI document is at `/openapi.json`.
 
@@ -85,7 +85,7 @@ The OpenAPI document is at `/openapi.json`.
 rampart serve                     run the service
 rampart index [--force]           ingest the corpus PDFs into Qdrant (incremental, idempotent)
 rampart triage "question"         one run, with the approval prompt
-rampart health [--mode http]      connect to the tools, check the index
+rampart health                    check the tools and the index
 rampart eval guardrail [--llm]    precision/recall of the signature guard (and the combined guard)
 rampart eval retrieval            hit rate of the retriever on the gold set
 rampart eval scenarios [--runs N] the validation suite against the real APIs; exit code 1 on a failure
@@ -101,8 +101,7 @@ docker compose up --build         # Qdrant + Rampart; the container indexes the 
 curl -s localhost:8765/readyz
 ```
 
-To run the agent on the host against the containerised tools: `export QDRANT_URL=http://localhost:6333`
-(so the output guard can read the retrieved chunks) and `rampart triage "..." --mode http`.
+Agents outside Rampart can use the tools at `http://localhost:8765/mcp` with the bearer token.
 
 ## Tests and evaluation
 
@@ -115,8 +114,8 @@ rampart eval guardrail && rampart eval retrieval
 
 - `tests/unit` — the guards without a model (BM25 matcher, redaction, softening, overlap), the policy table,
   tool contracts, tickets, the audit store, the scenario pass conditions, and the REST API over a scripted runner.
-- `tests/recorded` — the seven tools over the in-process MCP transport and the service with the real runner
-  and the MCP endpoint, with HTTP responses replayed from cassettes.
+- `tests/recorded` — the seven tools as the agent calls them and through an MCP client session, and the service
+  with the real runner, with HTTP responses replayed from cassettes.
 - `tests/live` — `rampart.evals.scenarios` run end to end (marker `live`).
 
 The validation scenarios are defined once ([src/rampart/evals/scenarios.py](src/rampart/evals/scenarios.py))
@@ -148,7 +147,7 @@ src/rampart/
   api/          FastAPI: app factory, auth, schemas, routers (triage, runs, tickets, tools, corpus, guardrails, policy, evals)
   agent/        LangGraph graph, state (the structured final answer), runner, the versioned system prompt
   guardrails/   BM25 signatures, LLM classifier and judge, redaction, softening, overlap, the three guard nodes
-  tools/        the seven MCP tools (server factory), the in-process / HTTP client, contracts, server-side prompts
+  tools/        the seven tool functions (core), the agent's LangChain adapter, the MCP adapter, contracts, server-side prompts
   intel/        NVD, FIRST EPSS, CISA KEV, Tavily clients
   rag/          Qdrant store and the ingestion job
   evals/        guardrail precision/recall, retrieval hit rate, the validation scenarios

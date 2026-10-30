@@ -1,11 +1,12 @@
-"""The MCP server: seven tools over one FastMCP definition.
+"""The seven triage tools, as plain async functions: the core every adapter serves.
 
-Served two ways from the same definition: in-process through the SDK's memory transport (the agent
-runner, the tests) or as the `/mcp` endpoint of the ASGI application (`rampart.api`). Tools never
-raise: every result is an `Envelope`.
+- the agent calls them in-process as LangChain tools (`rampart.tools.langchain_tools`), with no protocol
+  between the two;
+- external agents reach them over MCP at `/mcp` (`rampart.tools.mcp_server`);
+- people and scripts will reach them over REST at `/v1/tools/{name}` (the API).
 
-`create_mcp_server()` builds a new server instance with the seven tools registered; `get_mcp()` is the
-process-wide default used by the in-process client. Nothing here reads settings at import time.
+Each adapter takes a tool's name, description and argument schema from its function, so they cannot drift
+apart. Tools never raise: every result is an `Envelope`. Nothing here reads settings at import time.
 """
 
 from __future__ import annotations
@@ -13,15 +14,13 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from functools import lru_cache
+from types import MappingProxyType
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import ValidationError
 
 from ..http import HttpClient, HttpError
@@ -49,12 +48,8 @@ TOOL_NAMES = (
 )
 SIDE_EFFECT_TOOLS = frozenset({"open_ticket"})
 
-INSTRUCTIONS = """Rampart vulnerability-triage tools. Typical flow: get_cve_details -> get_exploit_intel ->
-query_private_database (which systems run the affected software, exposure, controls, policy SLA) ->
-assess_urgency -> open_ticket (requires operator approval). Every tool returns {"status": "ok"|"error", ...}."""
 
-
-# ── dependencies (one per process, created lazily so both serving modes share them) ──────────
+# ── dependencies (one per process, created lazily, shared by every adapter) ────────────────────
 class Deps:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -386,54 +381,33 @@ async def open_ticket(
         return _error("tickets", e)
 
 
-TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = {
-    "get_cve_details": get_cve_details,
-    "get_exploit_intel": get_exploit_intel,
-    "search_advisories": search_advisories,
-    "assess_urgency": assess_urgency,
-    "query_private_database": query_private_database,
-    "list_systems": list_systems,
-    "open_ticket": open_ticket,
-}
-
-
-# ── the server object ────────────────────────────────────────────────────────
-def create_mcp_server() -> FastMCP:
-    """A FastMCP server with the seven tools registered. Each instance owns its own HTTP session manager,
-    so the ASGI app and the in-process client can live in one process."""
-    server = FastMCP(
-        "rampart",
-        instructions=INSTRUCTIONS,
-        streamable_http_path="/mcp",
-        json_response=True,
-        stateless_http=True,
-        # The bearer-token middleware of the ASGI app is the access control; the SDK's Host-header check
-        # would otherwise reject requests addressed to the container's service name.
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-    )
-    for name, fn in TOOL_FUNCTIONS.items():
-        server.tool(name=name)(fn)
-    return server
-
-
-@lru_cache(maxsize=1)
-def get_mcp() -> FastMCP:
-    """The process-wide server used by the in-process client (`RampartTools(mode="inmemory")`)."""
-    return create_mcp_server()
+# The definitions: every adapter takes a tool's name, description and argument schema from these.
+TOOL_DEFINITIONS: Mapping[str, Callable[..., Awaitable[dict]]] = MappingProxyType(
+    {
+        "get_cve_details": get_cve_details,
+        "get_exploit_intel": get_exploit_intel,
+        "search_advisories": search_advisories,
+        "assess_urgency": assess_urgency,
+        "query_private_database": query_private_database,
+        "list_systems": list_systems,
+        "open_ticket": open_ticket,
+    }
+)
+# What a call runs: the definitions, unless `override_tool` swapped one for a test or a demo.
+TOOL_FUNCTIONS: dict[str, Callable[..., Awaitable[dict]]] = dict(TOOL_DEFINITIONS)
 
 
 # ── test and demo hook ────────────────────────────────────────────────────────
 @asynccontextmanager
-async def override_tool(name: str, fn: Callable[..., Awaitable[dict]], server: FastMCP | None = None):
-    """Temporarily replace a registered tool's implementation (scenario 6 injects a poisoned advisory this
-    way). The MCP schema is unchanged; only the function behind it."""
-    target = server or get_mcp()
-    tool = target._tool_manager.get_tool(name)
-    if tool is None:
+async def override_tool(name: str, fn: Callable[..., Awaitable[dict]]):
+    """Temporarily replace the function registered under a tool's name (scenario 6 injects a poisoned
+    advisory this way). The agent's tools look the function up at call time, so they reach the replacement;
+    the schema they offer the model is unchanged."""
+    if name not in TOOL_FUNCTIONS:
         raise KeyError(name)
-    original = tool.fn
-    tool.fn = fn
+    original = TOOL_FUNCTIONS[name]
+    TOOL_FUNCTIONS[name] = fn
     try:
         yield
     finally:
-        tool.fn = original
+        TOOL_FUNCTIONS[name] = original
