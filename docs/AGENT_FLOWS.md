@@ -54,7 +54,7 @@ that is not a tool result comes back as an error envelope the model can read.
 | `open_ticket` (unreachable through the router) | `APPROVAL_REQUIRED`, the ticket tool is not called |
 | a name that is not a tool | `UNKNOWN_TOOL`, with the valid names |
 | arguments the schema rejects | `INVALID_INPUT` |
-| a tool that raised (MCP `isError`, transport) | `TOOL_ERROR` |
+| a tool that raised | `TOOL_ERROR` |
 
 ## The approval step
 

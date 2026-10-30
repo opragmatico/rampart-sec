@@ -4,9 +4,9 @@ A run answers one question and belongs to a thread (the conversation). Runs are 
 paused for ticket approval can be resumed later, and every run is written to the audit store with its
 guardrail log, tools, tokens, cost estimate and latency per node.
 
-The runner takes its tools as LangChain tools and does not own their connection: the caller opens the MCP
-session (in-process or over HTTP) and passes `tools` (and, in Qdrant local mode, the corpus store the tools
-already hold, which the output guard reads). That keeps one owner per connection, and lets a test pass stubs.
+The runner takes its tools as LangChain tools and does not own them: the caller passes `tools` (the tool
+functions called in-process) and, in Qdrant local mode, the corpus store those functions already hold, which
+the output guard reads. That keeps one owner per client, and lets a test pass stubs.
 
 Per thread, the runner keeps three rules:
 
