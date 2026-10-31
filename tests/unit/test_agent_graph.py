@@ -1,5 +1,5 @@
-"""The workflow stub with a scripted agent and tools: which nodes it declares, how it routes, and that the
-state reducers carry the evidence the output guard needs across tool steps. No model, no vector store."""
+"""The graph wiring with scripted agent, tool and approval nodes: which nodes it declares, how it routes, and
+that the state reducers carry the evidence the output guard needs across tool steps. No model, no vector store."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from rampart.agent.graph import FINAL_ANSWER_TOOL, build_graph
+from rampart.agent.graph import FINAL_ANSWER_TOOL, build_graph, route_after_agent
 from rampart.guardrails.nodes import DISCLAIMER, REFUSAL, Guards
 from rampart.tools.models import Envelope
 from tests.stubs import StubClassifier, StubJudge
@@ -64,8 +64,36 @@ def scripted_tools(state: dict) -> dict:
 
 
 def test_the_graph_declares_the_guard_nodes_around_the_agent(settings):
-    nodes = set(build_graph(_guards(settings)).get_graph().nodes)
-    assert nodes == {"__start__", "input_guard", "refuse", "agent", "tools", "tool_guard", "output_guard", "__end__"}
+    graph = build_graph(_guards(settings)).get_graph()
+    assert set(graph.nodes) == {
+        "__start__",
+        "input_guard",
+        "refuse",
+        "agent",
+        "tools",
+        "approval",
+        "tool_guard",
+        "output_guard",
+        "__end__",
+    }
+    # the approval step is the only way into open_ticket, and it hands its results to the tool guard
+    assert {(e.source, e.target) for e in graph.edges} >= {("agent", "approval"), ("approval", "tool_guard")}
+
+
+@pytest.mark.parametrize(
+    ("names", "route"),
+    [
+        ((), "output_guard"),  # a plain reply
+        ((FINAL_ANSWER_TOOL,), "output_guard"),
+        (("get_cve_details",), "tools"),
+        (("get_cve_details", FINAL_ANSWER_TOOL), "tools"),  # the tool step answers the final call as premature
+        (("open_ticket",), "approval"),
+        (("open_ticket", "get_exploit_intel", FINAL_ANSWER_TOOL), "approval"),
+    ],
+)
+def test_after_the_agent_tickets_go_to_approval_and_a_lone_final_answer_ends_the_run(names, route):
+    calls = [{"name": n, "args": {}, "id": f"c{i}"} for i, n in enumerate(names)]
+    assert route_after_agent({"messages": [AIMessage(content="", tool_calls=calls)]}) == route
 
 
 async def test_a_blocked_question_goes_to_refuse_and_never_reaches_the_agent(settings):
