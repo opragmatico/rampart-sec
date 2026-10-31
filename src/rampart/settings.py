@@ -73,7 +73,6 @@ class Settings(BaseSettings):
     auth_token: SecretStr | None = Field(
         default=None, validation_alias=AliasChoices("RAMPART_AUTH_TOKEN", "RAMPART_MCP_AUTH_TOKEN")
     )
-    mcp_url: str = "http://127.0.0.1:8765/mcp"  # where `--mode http` clients find the tools
     max_concurrent_runs: int = 4  # agent runs served at once by the API
 
     # ── tickets ─────────────────────────────────────────────────────────────────
