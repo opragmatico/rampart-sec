@@ -3,7 +3,7 @@
 Every path through the guardrail code in `rampart.guardrails`: the signature index the input guard and
 the tool guard share, the three guard nodes and `refuse`. Each node is a plain function over the graph
 state and writes one `guardrail_log` entry per decision, with the scores that produced it. How the
-graph wires the nodes together (agent, tools, approval) is described with the graph itself.
+graph wires the nodes together (agent, tools, approval) is drawn in [AGENT_FLOWS.md](AGENT_FLOWS.md).
 
 Colours: green passes, red blocks or withholds, amber records a reason to withhold.
 

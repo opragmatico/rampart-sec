@@ -145,7 +145,7 @@ See [.env.example](.env.example) for the full list.
 ```
 src/rampart/
   api/          FastAPI: app factory, auth, schemas, routers (triage, runs, tickets, tools, corpus, guardrails, policy, evals)
-  agent/        LangGraph graph, state (the structured final answer), runner, the versioned system prompt
+  agent/        LangGraph wiring, the agent / tool / approval nodes, state (the contract and the structured final answer), runner, the versioned system prompt
   guardrails/   BM25 signatures, LLM classifier and judge, redaction, softening, overlap, the three guard nodes
   tools/        the seven tool functions (core), the agent's LangChain adapter, the MCP adapter, contracts, server-side prompts
   intel/        NVD, FIRST EPSS, CISA KEV, Tavily clients
