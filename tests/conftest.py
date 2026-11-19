@@ -20,6 +20,7 @@ os.environ["RAMPART_VAR_DIR"] = str(_TMP / "var")
 os.environ["RAMPART_QDRANT_PATH"] = str(_TMP / "qdrant")
 os.environ["RAMPART_AUTH_TOKEN"] = TEST_TOKEN
 os.environ.setdefault("RAMPART_LOG_LEVEL", "WARNING")
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "1")  # no usage telemetry from the test suite
 os.environ.pop("QDRANT_URL", None)  # the suite always uses Qdrant local mode under the temp dir
 
 

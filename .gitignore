@@ -229,3 +229,5 @@ qdrant_storage/
 .env
 # Claude Code worktrees
 .claude/worktrees/
+# DeepEval's local cache and results
+.deepeval/

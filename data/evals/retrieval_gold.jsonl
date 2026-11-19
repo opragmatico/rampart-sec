@@ -1,0 +1,24 @@
+{"question": "Which system runs Citrix NetScaler ADC and which firmware build is deployed?", "doc": "SRA-customer-portal.pdf", "system": "customer-portal", "answer_contains": ["14.1-72.18"]}
+{"question": "What version of Apache Tomcat does the Booking API run on?", "doc": "SRA-customer-portal.pdf", "system": "customer-portal", "answer_contains": ["10.1.55"]}
+{"question": "Is a DIGEST or BASIC authenticator configured in Tomcat for the Booking API?", "doc": "SRA-customer-portal.pdf", "system": "customer-portal", "answer_contains": ["no"]}
+{"question": "Why does the Customer Portal use a locally built OpenSSL, and which version?", "doc": "SRA-customer-portal.pdf", "system": "customer-portal", "answer_contains": ["3.5.4", "CMP"]}
+{"question": "Which open finding concerns TLS 1.0 on the Customer Portal and when is it due?", "doc": "SRA-customer-portal.pdf", "system": "customer-portal", "answer_contains": ["F-2026-011", "2026-09-30"]}
+{"question": "Which GitLab version does the CI/CD platform run and is Duo Chat enabled?", "doc": "SRA-cicd-platform.pdf", "system": "cicd-platform", "answer_contains": ["19.2.4", "Duo"]}
+{"question": "Is anonymous access enabled on Artifactory?", "doc": "SRA-cicd-platform.pdf", "system": "cicd-platform", "answer_contains": ["disabled"]}
+{"question": "Which Jenkins version is in service and how do agents connect?", "doc": "SRA-cicd-platform.pdf", "system": "cicd-platform", "answer_contains": ["2.568.1", "JNLP"]}
+{"question": "Does the argocd namespace have network policies applied?", "doc": "SRA-cicd-platform.pdf", "system": "cicd-platform", "answer_contains": ["F-2026-023"]}
+{"question": "Which Confluence Data Center version is deployed and is any space exposed to the internet?", "doc": "SRA-collaboration-suite.pdf", "system": "collaboration-suite", "answer_contains": ["9.2.21", "public"]}
+{"question": "Which version of the Collabora built-in CODE server is installed in Nextcloud?", "doc": "SRA-collaboration-suite.pdf", "system": "collaboration-suite", "answer_contains": ["26.4.202"]}
+{"question": "Which Mattermost version runs and is it reachable from the internet?", "doc": "SRA-collaboration-suite.pdf", "system": "collaboration-suite", "answer_contains": ["11.8.3", "VPN"]}
+{"question": "Which Metabase version is deployed and is the H2 sample database present?", "doc": "SRA-data-platform.pdf", "system": "data-platform", "answer_contains": ["1.58.12", "F-2026-042"]}
+{"question": "Which OAuth provider is configured for Airflow's FAB auth manager?", "doc": "SRA-data-platform.pdf", "system": "data-platform", "answer_contains": ["Keycloak"]}
+{"question": "Is the Kafka event producer enabled in Airflow's scheduler?", "doc": "SRA-data-platform.pdf", "system": "data-platform", "answer_contains": ["disabled"]}
+{"question": "How many users can deploy machine-learning models in Elasticsearch?", "doc": "SRA-data-platform.pdf", "system": "data-platform", "answer_contains": ["six"]}
+{"question": "Which Langflow version does the AI Assistant Platform run?", "doc": "SRA-ai-assistant-platform.pdf", "system": "ai-assistant-platform", "answer_contains": ["1.9.1"]}
+{"question": "Where does Ollama run and does it require authentication?", "doc": "SRA-ai-assistant-platform.pdf", "system": "ai-assistant-platform", "answer_contains": ["workstation", "None"]}
+{"question": "Which version of MCP Atlassian is deployed and what credential does it hold?", "doc": "SRA-ai-assistant-platform.pdf", "system": "ai-assistant-platform", "answer_contains": ["0.21.4", "service account"]}
+{"question": "What is the remediation deadline for a Critical vulnerability on an internet-facing system?", "doc": "POLICY-vulnerability-management.pdf", "system": "policy", "answer_contains": ["7 days"]}
+{"question": "What does the policy say about a CISA KEV due date that is earlier than the policy deadline?", "doc": "POLICY-vulnerability-management.pdf", "system": "policy", "answer_contains": ["earlier"]}
+{"question": "Who approves a risk acceptance for a High finding?", "doc": "POLICY-vulnerability-management.pdf", "system": "policy", "answer_contains": ["CISO"]}
+{"question": "Which ticket priority corresponds to High severity?", "doc": "POLICY-vulnerability-management.pdf", "system": "policy", "answer_contains": ["P2"]}
+{"question": "May hostnames and IP addresses be reproduced in messages produced by automated assistants?", "doc": "POLICY-vulnerability-management.pdf", "system": "policy", "answer_contains": ["not"]}

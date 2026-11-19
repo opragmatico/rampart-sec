@@ -46,7 +46,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+evals = [
+  "deepeval==4.3.4",
+]
 dev = [
+  "deepeval==4.3.4",
   "mypy==2.4.0",
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",

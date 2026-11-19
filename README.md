@@ -108,7 +108,7 @@ Agents outside Rampart can use the tools at `http://localhost:8765/mcp` with the
 ```bash
 make test        # unit + recorded tests: no network, no tokens (HTTP replayed from tests/cassettes)
 make lint        # ruff
-make test-live   # the six scenarios end to end (needs keys, ~3 min, a few cents)
+make test-live   # the six scenarios end to end, scored by DeepEval (needs keys, ~5 min, a few cents)
 rampart eval guardrail && rampart eval retrieval
 ```
 
@@ -116,10 +116,16 @@ rampart eval guardrail && rampart eval retrieval
   tool contracts, tickets, the audit store, the scenario pass conditions, and the REST API over a scripted runner.
 - `tests/recorded` — the seven tools as the agent calls them and through an MCP client session, and the service
   with the real runner, with HTTP responses replayed from cassettes.
-- `tests/live` — `rampart.evals.scenarios` run end to end (marker `live`).
+- `tests/live` — `rampart.evals.scenarios` run end to end and asserted with DeepEval (marker `live`).
 
 The validation scenarios are defined once ([src/rampart/evals/scenarios.py](src/rampart/evals/scenarios.py))
-and run three ways: `pytest -m live`, `rampart eval scenarios --runs N`, `POST /v1/evals/scenarios`.
+and run three ways: `pytest -m live`, `rampart eval scenarios --runs N`, `POST /v1/evals/scenarios`. Each run
+becomes a [DeepEval](https://github.com/confident-ai/deepeval) test case, scored by the scenario's
+deterministic pass condition and DeepEval's Tool Correctness (both run offline in CI against scripted runs)
+and, with a judge model (`RAMPART_JUDGE_MODEL`), by GEval against the scenario's written criteria and by
+Faithfulness to the internal documents the run retrieved. DeepEval's usage telemetry is off unless
+`DEEPEVAL_TELEMETRY_OPT_OUT=0`. The guardrail and retrieval evaluations are threshold sweeps and hit rates
+over labelled sets, computed directly.
 
 ## Configuration
 
@@ -150,7 +156,7 @@ src/rampart/
   tools/        the seven tool functions (core), the agent's LangChain adapter, the MCP adapter, contracts, server-side prompts
   intel/        NVD, FIRST EPSS, CISA KEV, Tavily clients
   rag/          Qdrant store and the ingestion job
-  evals/        guardrail precision/recall, retrieval hit rate, the validation scenarios
+  evals/        guardrail precision/recall, retrieval hit rate, the validation scenarios (DeepEval)
   tickets/      SQLite ticket store, GitHub Issues adapter
   corpus/       the corpus builder (PDFs from YAML specs, verified against NVD)
   policy.py     the policy's decision table as code

@@ -31,7 +31,7 @@ test:            ## unit + recorded tests (no network, no tokens)
 cov:             ## tests with a coverage report
 	$(BIN)/pytest --cov --cov-report=term-missing
 
-test-live:       ## the six validation scenarios against the real APIs (needs keys, ~3 min)
+test-live:       ## the six validation scenarios against the real APIs, scored by DeepEval (needs keys, ~5 min)
 	$(BIN)/pytest -m live -v
 
 serve:           ## run the service on RAMPART_HOST:RAMPART_PORT
